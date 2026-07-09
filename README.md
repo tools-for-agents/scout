@@ -1,5 +1,7 @@
 # 🧭 scout
 
+[![ci](https://github.com/tools-for-agents/scout/actions/workflows/ci.yml/badge.svg)](https://github.com/tools-for-agents/scout/actions/workflows/ci.yml)
+
 **The agent's web reader.**
 
 Raw HTML is a terrible thing to feed a model — a 380 KB Wikipedia page is ~95k tokens of markup for a few KB of prose. `scout` fetches a URL and gives back **clean, readable markdown** (headings, links, code, lists — the substance, none of the chrome), typically **~90% smaller** than the HTML. Every page is **cached**, so re-reading is free and your **whole reading history is searchable**.
