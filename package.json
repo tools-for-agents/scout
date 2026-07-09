@@ -1,0 +1,10 @@
+{
+  "name": "scout-agent",
+  "version": "0.1.0",
+  "description": "The agent's web reader: fetch a URL, extract clean readable markdown (readability-lite), cache it, and search your reading history. Token-efficient. Zero dependencies.",
+  "type": "module",
+  "bin": { "scout": "src/cli.js" },
+  "engines": { "node": ">=22" },
+  "scripts": { "mcp": "node mcp/mcp-server.js" },
+  "license": "MIT"
+}
