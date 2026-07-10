@@ -124,6 +124,9 @@
   .byline a { color:var(--accent); text-decoration:none; }
   .byline a:hover { text-decoration:underline; }
   .byline .chip { font-family:var(--mono); font-size:11px; background:var(--surface-2); border:1px solid var(--line); border-radius:20px; padding:2px 9px; color:var(--muted); }
+  .copy-md { margin-left:auto; font-family:var(--mono); font-size:11px; background:var(--surface-2); border:1px solid var(--line); color:var(--muted); border-radius:20px; padding:3px 11px; cursor:pointer; transition:color .12s, border-color .12s; }
+  .copy-md:hover { color:var(--accent); border-color:var(--accent); }
+  .copy-md.ok { color:#5aa15f; border-color:#5aa15f; }
 
   /* article body — serif, comfortable measure */
   .article { font-family:var(--serif); font-size:18px; line-height:1.72; color:var(--ink-soft); }
@@ -215,7 +218,7 @@ const $ = (s) => document.querySelector(s);
 const api = (p) => fetch(p).then((r) => r.json());
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 
-let LIB = [], activeUrl = null;
+let LIB = [], activeUrl = null, activeMarkdown = '';
 
 // ── Recent reads (client-side, localStorage) ─────────────────────────────────
 const RKEY = 'scout:recent', RCAP = 8;
@@ -332,6 +335,7 @@ async function openArticle(url) {
   const p = await api('/api/page?url=' + encodeURIComponent(url));
   if (p.error) return;
   pushRecent(url);                    // remember it in the recent-reads strip
+  activeMarkdown = p.markdown;        // full clean markdown, for the copy button
   const words = (p.markdown.match(/\S+/g) || []).length;
   const mins = Math.max(1, Math.round(words / 200));
   $('#welcome').style.display = 'none';
@@ -345,6 +349,7 @@ async function openArticle(url) {
       <span class="dot">·</span><span>read ${fmtDate(p.fetched_at)}</span>
       <span class="dot">·</span><span>${mins} min</span>
       <span class="chip">~${fmtTok(p.tokens)} tok</span>
+      <button class="copy-md" data-copymd title="Copy the clean markdown to your clipboard" aria-label="Copy article as markdown">⧉ copy markdown</button>
     </div>
     <div class="article">${renderMarkdown(p.markdown)}</div>`;
   r.parentElement.scrollTop = 0;
@@ -352,6 +357,25 @@ async function openArticle(url) {
   buildTOC();
   $('#readProgressFill').style.width = '0%'; updateProgress();   // reset + show the reading-progress bar
 }
+
+// Copy the open article's clean markdown — scout's whole value in one click.
+async function copyMarkdown(btn) {
+  const text = activeMarkdown;
+  if (!text) return;
+  try { await navigator.clipboard.writeText(text); }
+  catch {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch {}
+    document.body.removeChild(ta);
+  }
+  const old = btn.textContent; btn.textContent = '✓ copied'; btn.classList.add('ok');
+  setTimeout(() => { btn.textContent = old; btn.classList.remove('ok'); }, 1300);
+}
+$('#reader').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-copymd]'); if (b) copyMarkdown(b);
+});
 
 // ── In-article table of contents ─────────────────────────────────────────────
 let tocHeadings = [];

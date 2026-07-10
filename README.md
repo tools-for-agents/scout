@@ -48,6 +48,7 @@ A calm, zero-dependency web view of everything scout has read — the same cache
 - **Recent reads** — the articles you've opened surface as clickable chips above the shelf (remembered in the browser only, most-recent first); jump back to one in a click, or **clear ✕** to forget them.
 - **Search** your whole reading history (FTS5 + bm25) with matched terms highlighted.
 - **The reader** — clean, comfortable long-form: the extracted markdown rendered with real typographic hierarchy (including **images**), in a **paper** or **night** theme.
+- **Copy markdown** — one **⧉ copy markdown** button in the reader lifts the whole article's clean markdown to your clipboard — the same tokens an agent would get from `scout_fetch`, ready to paste into a note, a prompt, or [`cortex`](../cortex).
 - **Table of contents** — any article with a couple of headings gets a **☰ contents** button; open it for an outline of the page, click a heading to jump to that section, and the current section stays highlighted as you scroll.
 - **Reading progress** — a slim bar across the top of the reader fills as you scroll, so you always know how far through a long piece you are.
 - **Keyboard-accessible** — every control has a visible focus ring, the article cards open with Tab + Enter (not just the mouse), and icon controls carry aria-labels.
