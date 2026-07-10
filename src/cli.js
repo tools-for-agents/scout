@@ -10,7 +10,7 @@ import * as scout from './core.js';
 const [, , cmd, ...rest] = process.argv;
 // Tiny arg parser: value-flags vs booleans, so a flag's value isn't mistaken
 // for the positional URL/query.
-const VALUE = new Set(['--tokens', '--limit', '-k']);
+const VALUE = new Set(['--tokens', '--limit', '-k', '--port']);
 const positionals = []; const flags = {};
 for (let i = 0; i < rest.length; i++) {
   const a = rest[i];
