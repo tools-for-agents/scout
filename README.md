@@ -48,6 +48,7 @@ A calm, zero-dependency web view of everything scout has read — the same cache
 - **Recent reads** — the articles you've opened surface as clickable chips above the shelf (remembered in the browser only, most-recent first); jump back to one in a click, or **clear ✕** to forget them.
 - **Search** your whole reading history (FTS5 + bm25) with matched terms highlighted.
 - **The reader** — clean, comfortable long-form: the extracted markdown rendered with real typographic hierarchy (including **images**), in a **paper** or **night** theme.
+- **Table of contents** — any article with a couple of headings gets a **☰ contents** button; open it for an outline of the page, click a heading to jump to that section, and the current section stays highlighted as you scroll.
 - Read-only and **cache-only** — the web view never touches the network; `/api/page` returns 404 for anything not already read.
 
 Try the demo without a network fetch: `node scripts/seed.js` then `scout serve`.

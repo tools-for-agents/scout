@@ -92,6 +92,22 @@
 
   /* ── Reader (right) ───────────────────────────────────────── */
   .reader-wrap { grid-area:reader; overflow:auto; position:relative; }
+  /* In-article table of contents (floating toggle + popover) */
+  .toc-toggle { position:fixed; top:22px; right:26px; z-index:40; display:inline-flex; align-items:center; gap:7px;
+    font-family:var(--mono); font-size:11px; color:var(--muted); background:var(--surface); border:1px solid var(--line);
+    border-radius:20px; padding:7px 14px; cursor:pointer; box-shadow:var(--shadow); transition:color .12s, border-color .12s; }
+  .toc-toggle[hidden] { display:none; }
+  .toc-toggle:hover, .toc-toggle.open { color:var(--accent); border-color:var(--accent); }
+  .toc-toggle .tt-ic { font-size:12px; }
+  .toc-pop { position:fixed; top:60px; right:26px; z-index:40; width:264px; max-height:min(66vh,540px); overflow:auto;
+    background:var(--surface); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); padding:8px; }
+  .toc-pop[hidden] { display:none; }
+  .toc-pop .toc-h { font-family:var(--mono); font-size:9.5px; text-transform:uppercase; letter-spacing:1.4px; color:var(--faint); padding:6px 10px 9px; }
+  .toc-pop .toc-item { display:block; width:100%; text-align:left; font-family:var(--serif); font-size:13.5px; line-height:1.35;
+    color:var(--ink-soft); background:none; border:none; border-left:2px solid transparent; padding:6px 11px; border-radius:8px; cursor:pointer; transition:background .1s, color .1s; }
+  .toc-pop .toc-item:hover { background:var(--bg); color:var(--ink); }
+  .toc-pop .toc-item.lvl-3 { padding-left:26px; font-size:12.5px; color:var(--muted); }
+  .toc-pop .toc-item.active { color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft); }
   .reader { max-width:720px; margin:0 auto; padding:54px 40px 120px; }
   .kicker { font-size:12px; color:var(--accent); text-transform:uppercase; letter-spacing:1.4px; font-weight:600; margin-bottom:14px; }
   .reader h1.title { font-family:var(--serif); font-size:38px; line-height:1.15; letter-spacing:-.4px; margin:0 0 16px; text-wrap:balance; }
@@ -176,6 +192,8 @@
 
   <div class="reader-wrap" id="readerWrap">
     <article class="reader" id="reader" hidden></article>
+    <button class="toc-toggle" id="tocToggle" hidden title="Table of contents" aria-label="Table of contents" aria-expanded="false"><span class="tt-ic">☰</span><span class="tt-tx">contents</span></button>
+    <nav class="toc-pop" id="tocPop" hidden aria-label="Table of contents"></nav>
     <div class="welcome" id="welcome">
       <div class="big">☞</div>
       <h2>The agent's reading room</h2>
@@ -318,7 +336,57 @@ async function openArticle(url) {
     <div class="article">${renderMarkdown(p.markdown)}</div>`;
   r.parentElement.scrollTop = 0;
   history.replaceState(null, '', '#' + encodeURIComponent(url));
+  buildTOC();
 }
+
+// ── In-article table of contents ─────────────────────────────────────────────
+let tocHeadings = [];
+const slugify = (s) => String(s).toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'section';
+function buildTOC() {
+  const toggle = $('#tocToggle'), pop = $('#tocPop');
+  const hs = [...document.querySelectorAll('#reader .article h1, #reader .article h2, #reader .article h3')];
+  const seen = new Set();
+  tocHeadings = hs.map((h) => {
+    let id = slugify(h.textContent), base = id, n = 2;
+    while (seen.has(id)) id = base + '-' + (n++);
+    seen.add(id); h.id = id;
+    return { id, text: h.textContent, level: h.tagName === 'H3' ? 3 : 2, el: h };
+  });
+  toggle.classList.remove('open'); toggle.setAttribute('aria-expanded', 'false'); pop.hidden = true;
+  if (tocHeadings.length < 2) { toggle.hidden = true; return; }   // not worth a TOC
+  pop.innerHTML = `<div class="toc-h">on this page</div>` +
+    tocHeadings.map((h) => `<button class="toc-item lvl-${h.level}" data-id="${esc(h.id)}">${esc(h.text)}</button>`).join('');
+  toggle.hidden = false;
+  updateActiveHeading();
+}
+function toggleTOC(force) {
+  const pop = $('#tocPop'), toggle = $('#tocToggle');
+  const open = force === undefined ? pop.hidden : force;
+  pop.hidden = !open; toggle.classList.toggle('open', open); toggle.setAttribute('aria-expanded', String(open));
+  if (open) updateActiveHeading();
+}
+$('#tocToggle').addEventListener('click', (e) => { e.stopPropagation(); toggleTOC(); });
+$('#tocPop').addEventListener('click', (e) => {
+  const it = e.target.closest('.toc-item'); if (!it) return;
+  const el = document.getElementById(it.dataset.id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  toggleTOC(false);
+});
+document.addEventListener('click', (e) => {   // click outside → close
+  if (!$('#tocPop').hidden && !e.target.closest('#tocPop') && !e.target.closest('#tocToggle')) toggleTOC(false);
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#tocPop').hidden) toggleTOC(false); });
+let tocRAF = 0;
+function updateActiveHeading() {
+  if (!tocHeadings.length) return;
+  const top = $('#readerWrap').scrollTop + 90;   // a heading counts as "current" once near the top
+  let active = tocHeadings[0];
+  for (const h of tocHeadings) { if (h.el.offsetTop <= top) active = h; else break; }
+  $('#tocPop').querySelectorAll('.toc-item').forEach((it) => it.classList.toggle('active', it.dataset.id === active.id));
+}
+$('#readerWrap').addEventListener('scroll', () => {
+  if (tocRAF) return; tocRAF = requestAnimationFrame(() => { tocRAF = 0; updateActiveHeading(); });
+});
 
 // ── Zero-dependency markdown → HTML ──────────────────────────────────────────
 function renderMarkdown(md) {
