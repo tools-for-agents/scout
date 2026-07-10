@@ -82,6 +82,13 @@
   .recent .rchip .rt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px; }
   .list { flex:1; overflow:auto; padding:8px; }
   .list-label { font-size:10px; color:var(--faint); text-transform:uppercase; letter-spacing:1px; padding:8px 10px 6px; }
+  /* host filter chips over the shelf */
+  .hostbar { display:flex; flex-wrap:wrap; gap:5px; padding:9px 12px 3px; }
+  .hostbar[hidden] { display:none; }
+  .host-chip { font-family:var(--mono); font-size:10.5px; color:var(--muted); background:var(--surface-2); border:1px solid var(--line); border-radius:20px; padding:2px 9px; cursor:pointer; transition:color .12s, border-color .12s; }
+  .host-chip:hover { color:var(--ink); }
+  .host-chip.active { color:var(--accent); border-color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
+  .host-chip b { font-weight:600; color:inherit; }
   .card { padding:12px 13px; border-radius:10px; cursor:pointer; border:1px solid transparent; transition:background .12s, border-color .12s; }
   .card:hover { background:var(--surface-2); }
   .card.active { background:var(--surface-2); border-color:var(--line-2); box-shadow:inset 3px 0 0 var(--accent); }
@@ -207,6 +214,7 @@
       <div class="fld"><span class="ic">⌕</span><input id="q" placeholder="search everything you've read…" autocomplete="off" spellcheck="false" /></div>
     </div>
     <div class="recent" id="recent" hidden></div>
+    <div class="hostbar" id="hostbar" hidden></div>
     <div class="list" id="list"></div>
   </aside>
 
@@ -227,7 +235,7 @@ const $ = (s) => document.querySelector(s);
 const api = (p) => fetch(p).then((r) => r.json());
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 
-let LIB = [], activeUrl = null, activeMarkdown = '';
+let LIB = [], activeUrl = null, activeMarkdown = '', hostFilter = null;
 
 // ── Recent reads (client-side, localStorage) ─────────────────────────────────
 const RKEY = 'scout:recent', RCAP = 8;
@@ -278,7 +286,7 @@ $('#theme').addEventListener('click', () => {
 (async () => {
   const [stats, lib] = await Promise.all([api('/api/stats'), api('/api/library')]);
   LIB = lib.pages;
-  renderStats(stats); renderList(LIB); renderRecent();
+  renderStats(stats); renderHostbar(); renderList(visibleLib()); renderRecent();
   // deep-link: #<encoded url>
   const h = decodeURIComponent(location.hash.slice(1));
   if (h && LIB.some((p) => p.url === h)) openArticle(h);
@@ -292,6 +300,24 @@ function renderStats(s) {
     <div><b>${kb}<span style="font-size:11px"> KB</span></b><span>clean markdown</span></div>
     ${s.total_html_bytes > s.total_md_bytes ? `<div><b>${saved}%</b><span>lighter than html</span></div>` : ''}`;
 }
+
+// ── Host filter — narrow the shelf to one site (chips over the list) ──────────
+function visibleLib() { return hostFilter ? LIB.filter((p) => (p.host || 'web') === hostFilter) : LIB; }
+function renderHostbar() {
+  const el = $('#hostbar'); const counts = {};
+  for (const p of LIB) { const h = p.host || 'web'; counts[h] = (counts[h] || 0) + 1; }
+  const hosts = Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
+  if (hosts.length < 2) { el.hidden = true; el.innerHTML = ''; return; }   // one host → nothing to filter by
+  el.hidden = false;
+  el.innerHTML = `<button class="host-chip${!hostFilter ? ' active' : ''}" data-host="">all <b>${LIB.length}</b></button>` +
+    hosts.map((h) => `<button class="host-chip${hostFilter === h ? ' active' : ''}" data-host="${esc(h)}" title="${esc(h)}">${esc(h)} <b>${counts[h]}</b></button>`).join('');
+}
+$('#hostbar').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-host]'); if (!b) return;
+  hostFilter = b.dataset.host || null;
+  $('#q').value = '';                 // picking a host resets the search
+  renderHostbar(); renderList(visibleLib());
+});
 
 // ── List / search results ────────────────────────────────────────────────────
 function renderList(pages) {
@@ -327,7 +353,7 @@ let sTimer;
 $('#q').addEventListener('input', (e) => {
   clearTimeout(sTimer);
   const q = e.target.value.trim();
-  if (!q) { renderList(LIB); return; }
+  if (!q) { renderList(visibleLib()); return; }
   sTimer = setTimeout(async () => {
     const r = await api('/api/search?k=20&q=' + encodeURIComponent(q));
     $('#list').innerHTML = r.count
@@ -335,7 +361,7 @@ $('#q').addEventListener('input', (e) => {
       : `<div class="list-empty">No matches for “${esc(q)}”.</div>`;
   }, 170);
 });
-$('#q').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.target.value = ''; renderList(LIB); e.target.blur(); } });
+$('#q').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.target.value = ''; renderList(visibleLib()); e.target.blur(); } });
 
 // ── Open an article ──────────────────────────────────────────────────────────
 async function openArticle(url) {
