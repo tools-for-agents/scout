@@ -147,6 +147,15 @@
   .article pre { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px 16px; overflow:auto; margin:1.3em 0; }
   .article pre code { background:none; border:none; padding:0; font-size:13px; line-height:1.55; color:var(--ink-soft); }
   .article hr { border:none; border-top:1px solid var(--line); margin:2em 0; }
+  /* "More from <host>" — related reads at the foot of the article */
+  .related { margin-top:44px; padding-top:26px; border-top:1px solid var(--line); }
+  .related .rel-h { font-family:var(--sans); font-size:11.5px; text-transform:uppercase; letter-spacing:1.3px; color:var(--muted); margin-bottom:14px; }
+  .related .rel-h .rel-host { color:var(--accent); font-weight:600; letter-spacing:.3px; }
+  .related .rel-list { display:flex; flex-direction:column; gap:8px; }
+  .rel-card { display:flex; flex-direction:column; gap:3px; text-align:left; width:100%; background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:11px 15px; cursor:pointer; font-family:var(--sans); transition:border-color .12s, background .12s, transform .08s; }
+  .rel-card:hover { border-color:var(--accent); background:var(--surface-2); transform:translateY(-1px); }
+  .rel-card .rel-t { font-size:14.5px; color:var(--ink); font-weight:550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rel-card .rel-m { font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
 
   /* welcome */
   .welcome { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:30px; color:var(--muted); }
@@ -332,7 +341,10 @@ $('#q').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.target.
 async function openArticle(url) {
   activeUrl = url;
   document.querySelectorAll('.card').forEach((c) => c.classList.toggle('active', c.dataset.url === url));
-  const p = await api('/api/page?url=' + encodeURIComponent(url));
+  const [p, rel] = await Promise.all([
+    api('/api/page?url=' + encodeURIComponent(url)),
+    api('/api/related?url=' + encodeURIComponent(url)).catch(() => null),
+  ]);
   if (p.error) return;
   pushRecent(url);                    // remember it in the recent-reads strip
   activeMarkdown = p.markdown;        // full clean markdown, for the copy button
@@ -351,7 +363,8 @@ async function openArticle(url) {
       <span class="chip">~${fmtTok(p.tokens)} tok</span>
       <button class="copy-md" data-copymd title="Copy the clean markdown to your clipboard" aria-label="Copy article as markdown">⧉ copy markdown</button>
     </div>
-    <div class="article">${renderMarkdown(p.markdown)}</div>`;
+    <div class="article">${renderMarkdown(p.markdown)}</div>
+    ${relatedSection(rel)}`;
   r.parentElement.scrollTop = 0;
   history.replaceState(null, '', '#' + encodeURIComponent(url));
   buildTOC();
@@ -373,8 +386,19 @@ async function copyMarkdown(btn) {
   const old = btn.textContent; btn.textContent = '✓ copied'; btn.classList.add('ok');
   setTimeout(() => { btn.textContent = old; btn.classList.remove('ok'); }, 1300);
 }
+// "More from <host>" — other cached pages from the same site, at the foot of the reader.
+function relatedSection(rel) {
+  if (!rel || !rel.pages || !rel.pages.length) return '';
+  return `<div class="related">
+    <div class="rel-h">More from <span class="rel-host">${esc(rel.host)}</span></div>
+    <div class="rel-list">${rel.pages.map((x) => `<button class="rel-card" data-rel="${esc(x.url)}" title="${esc(x.title || x.url)}">
+      <span class="rel-t">${esc(x.title || x.url)}</span>
+      <span class="rel-m">${fmtDate(x.fetched_at)} · ~${fmtTok(x.tokens)} tok</span></button>`).join('')}</div>
+  </div>`;
+}
 $('#reader').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-copymd]'); if (b) copyMarkdown(b);
+  const b = e.target.closest('[data-copymd]'); if (b) { copyMarkdown(b); return; }
+  const rel = e.target.closest('[data-rel]'); if (rel) openArticle(rel.dataset.rel);
 });
 
 // ── In-article table of contents ─────────────────────────────────────────────

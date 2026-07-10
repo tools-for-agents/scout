@@ -10,7 +10,7 @@ const work = mkdtempSync(join(tmpdir(), 'scout-serve-'));
 process.env.SCOUT_DB = join(work, 'cache.db');
 process.on('exit', () => { try { rmSync(work, { recursive: true, force: true }); } catch {} });
 
-const { save, search } = await import('../src/core.js');
+const { save, search, related } = await import('../src/core.js');
 const { createScoutServer } = await import('../src/server.js');
 
 save({ url: 'https://example.com/reconnect', title: 'WebSocket reconnect backoff',
@@ -53,4 +53,21 @@ test('search coerces bad numeric args instead of erroring / over-returning', () 
     assert.equal(search('signal', { k: bad }).count, good.count, `k=${String(bad)} recovers the default count`);
   }
   assert.ok(search('signal', { max_tokens: 'xyz' }).tokens <= 1800, 'bad max_tokens falls back to the default budget');
+});
+
+test('related surfaces other cached pages from the same host', () => {
+  for (let i = 0; i < 3; i++) {
+    save({ url: `https://blog.example.org/post-${i}`, title: `Post ${i}`, description: 'x',
+      markdown: `# Post ${i}\n\nbody`, html_bytes: 900, fetched_at: `2026-07-0${i + 1}T00:00:00.000Z` });
+  }
+  save({ url: 'https://other.example.net/x', title: 'Other host', description: 'x',
+    markdown: '# Other\n\nbody', html_bytes: 900, fetched_at: '2026-07-05T00:00:00.000Z' });
+
+  const rel = related('https://blog.example.org/post-0');
+  assert.equal(rel.host, 'blog.example.org', 'derives the current page host');
+  assert.ok(rel.pages.length >= 2, 'surfaces the other same-host pages');
+  assert.ok(rel.pages.every((p) => p.host === 'blog.example.org'), 'only same-host pages');
+  assert.ok(!rel.pages.some((p) => p.url === 'https://blog.example.org/post-0'), 'excludes the current page');
+  assert.ok(!rel.pages.some((p) => p.host === 'other.example.net'), 'no cross-host leak');
+  assert.deepEqual(related('https://never.cached/x').pages, [], 'an uncached url yields an empty list, not an error');
 });

@@ -81,6 +81,22 @@ export function page(url) {
   return { ...shape(row, 0, true), host: hostOf(row.final_url || row.url) };
 }
 
+// Other cached pages from the same host as `url` — powers "more from this site"
+// in the reader. Returns an empty list (not an error) for an unknown/uncached url.
+export function related(url, { k = 6 } = {}) {
+  k = Number.isFinite(+k) && +k > 0 ? Math.floor(+k) : 6;
+  url = normUrl(url);
+  const cur = get('SELECT url, final_url FROM pages WHERE url=?', url);
+  if (!cur) return { url, host: null, pages: [] };
+  const host = hostOf(cur.final_url || cur.url);
+  const pages = all('SELECT url, final_url, title, fetched_at, md_bytes FROM pages ORDER BY fetched_at DESC')
+    .map((p) => ({ url: p.url, title: p.title, fetched_at: p.fetched_at,
+      host: hostOf(p.final_url || p.url), tokens: Math.ceil((p.md_bytes || 0) / 4) }))
+    .filter((p) => host && p.host === host && p.url !== url)
+    .slice(0, k);
+  return { url, host, pages };
+}
+
 // ── search everything you've read (FTS5 + bm25, token-budgeted snippets) ──────
 function ftsQuery(q) {
   const terms = String(q).match(/[A-Za-z0-9_]+/g) || [];

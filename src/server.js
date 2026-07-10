@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname, normalize } from 'node:path';
-import { library, search, page, stats } from './core.js';
+import { library, search, page, related, stats } from './core.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dir, '..', 'public');
@@ -27,6 +27,10 @@ const api = {
     const p = q.url && page(q.url);
     if (!p) throw new Error('not in cache');
     return p;
+  },
+  '/api/related': (q) => {
+    if (!q.url) throw new Error('url required');
+    return related(q.url, { k: q.k ? +q.k : 6 });
   },
   '/api/health': () => ({ ok: true, service: 'scout', ts: new Date().toISOString() }),
 };
