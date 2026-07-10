@@ -45,6 +45,7 @@ scout serve                                                # → http://localhos
 A calm, zero-dependency web view of everything scout has read — the same cache the agent recalls from:
 
 - **The shelf** — every cached page as a card (title, source, when it was read, `~token` size), newest first.
+- **Recent reads** — the articles you've opened surface as clickable chips above the shelf (remembered in the browser only, most-recent first); jump back to one in a click, or **clear ✕** to forget them.
 - **Search** your whole reading history (FTS5 + bm25) with matched terms highlighted.
 - **The reader** — clean, comfortable long-form: the extracted markdown rendered with real typographic hierarchy (including **images**), in a **paper** or **night** theme.
 - Read-only and **cache-only** — the web view never touches the network; `/api/page` returns 404 for anything not already read.

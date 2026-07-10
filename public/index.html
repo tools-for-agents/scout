@@ -61,6 +61,21 @@
   .searchbar input { flex:1; background:none; border:none; outline:none; color:var(--ink); font-size:13px; font-family:var(--sans); }
   .searchbar input::placeholder { color:var(--faint); }
 
+  .recent { padding:9px 12px 6px; border-bottom:1px solid var(--line); }
+  .recent[hidden] { display:none; }
+  .recent .rh { display:flex; justify-content:space-between; align-items:center; font-family:var(--mono);
+    font-size:9.5px; color:var(--faint); text-transform:uppercase; letter-spacing:1px; padding:1px 2px 7px; }
+  .recent .clr { cursor:pointer; background:none; border:none; color:var(--faint); font-family:var(--mono);
+    font-size:9.5px; letter-spacing:.5px; text-transform:uppercase; padding:0; }
+  .recent .clr:hover { color:var(--accent); }
+  .recent .rchips { display:flex; flex-wrap:wrap; gap:5px; }
+  .recent .rchip { display:inline-flex; align-items:center; gap:6px; max-width:100%; cursor:pointer;
+    font-family:var(--serif); font-size:12.5px; color:var(--ink); background:var(--bg);
+    border:1px solid var(--line); border-radius:8px; padding:4px 10px; transition:border-color .12s, background .12s; }
+  .recent .rchip:hover { border-color:var(--accent); }
+  .recent .rchip.active { border-color:var(--accent); background:var(--accent-soft); }
+  .recent .rchip .rg { color:var(--accent); font-size:11px; flex:none; }
+  .recent .rchip .rt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px; }
   .list { flex:1; overflow:auto; padding:8px; }
   .list-label { font-size:10px; color:var(--faint); text-transform:uppercase; letter-spacing:1px; padding:8px 10px 6px; }
   .card { padding:12px 13px; border-radius:10px; cursor:pointer; border:1px solid transparent; transition:background .12s, border-color .12s; }
@@ -155,6 +170,7 @@
     <div class="searchbar">
       <div class="fld"><span class="ic">⌕</span><input id="q" placeholder="search everything you've read…" autocomplete="off" spellcheck="false" /></div>
     </div>
+    <div class="recent" id="recent" hidden></div>
     <div class="list" id="list"></div>
   </aside>
 
@@ -174,6 +190,38 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':
 
 let LIB = [], activeUrl = null;
 
+// ── Recent reads (client-side, localStorage) ─────────────────────────────────
+const RKEY = 'scout:recent', RCAP = 8;
+let recentReads = loadRecent();     // declared before any handler runs (avoid TDZ)
+function loadRecent() {
+  try { const a = JSON.parse(localStorage.getItem(RKEY)); return Array.isArray(a) ? a.filter((x) => typeof x === 'string').slice(0, RCAP) : []; }
+  catch { return []; }
+}
+function saveRecent() { try { localStorage.setItem(RKEY, JSON.stringify(recentReads)); } catch {} }
+function pushRecent(url) {
+  recentReads = [url, ...recentReads.filter((u) => u !== url)].slice(0, RCAP);
+  saveRecent(); renderRecent();
+}
+function renderRecent() {
+  const live = recentReads.filter((u) => LIB.some((p) => p.url === u));   // drop pages no longer cached
+  if (live.length !== recentReads.length) { recentReads = live; saveRecent(); }
+  const el = $('#recent');
+  if (!live.length) { el.hidden = true; el.innerHTML = ''; return; }
+  el.innerHTML =
+    `<div class="rh"><span>recent reads</span><button class="clr" data-clear title="Clear recent reads">clear ✕</button></div>
+     <div class="rchips">` +
+    live.map((u) => { const p = LIB.find((x) => x.url === u) || {}; const label = p.title || p.host || u;
+      return `<button class="rchip${activeUrl === u ? ' active' : ''}" data-url="${esc(u)}" title="${esc(p.title || u)}"><span class="rg">☞</span><span class="rt">${esc(label)}</span></button>`;
+    }).join('') +
+    `</div>`;
+  el.hidden = false;
+}
+$('#recent').addEventListener('click', (e) => {
+  if (e.target.closest('[data-clear]')) { recentReads = []; saveRecent(); renderRecent(); return; }
+  const chip = e.target.closest('[data-url]');
+  if (chip) openArticle(chip.dataset.url);
+});
+
 // ── Theme ────────────────────────────────────────────────────────────────────
 (function initTheme() {
   const saved = localStorage.getItem('scout:theme');
@@ -191,7 +239,7 @@ $('#theme').addEventListener('click', () => {
 (async () => {
   const [stats, lib] = await Promise.all([api('/api/stats'), api('/api/library')]);
   LIB = lib.pages;
-  renderStats(stats); renderList(LIB);
+  renderStats(stats); renderList(LIB); renderRecent();
   // deep-link: #<encoded url>
   const h = decodeURIComponent(location.hash.slice(1));
   if (h && LIB.some((p) => p.url === h)) openArticle(h);
@@ -252,6 +300,7 @@ async function openArticle(url) {
   document.querySelectorAll('.card').forEach((c) => c.classList.toggle('active', c.dataset.url === url));
   const p = await api('/api/page?url=' + encodeURIComponent(url));
   if (p.error) return;
+  pushRecent(url);                    // remember it in the recent-reads strip
   const words = (p.markdown.match(/\S+/g) || []).length;
   const mins = Math.max(1, Math.round(words / 200));
   $('#welcome').style.display = 'none';
