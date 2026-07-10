@@ -92,6 +92,10 @@
 
   /* ── Reader (right) ───────────────────────────────────────── */
   .reader-wrap { grid-area:reader; overflow:auto; position:relative; }
+  /* Reading-progress bar (fills 0→100% as you scroll the article) */
+  .read-progress { position:sticky; top:0; z-index:6; height:3px; margin-bottom:-3px; background:transparent; pointer-events:none; }
+  .read-progress[hidden] { display:none; }
+  .read-progress i { display:block; height:100%; width:0%; background:linear-gradient(90deg, var(--accent), var(--mark)); box-shadow:0 0 10px var(--accent); transition:width .1s linear; }
   /* In-article table of contents (floating toggle + popover) */
   .toc-toggle { position:fixed; top:22px; right:26px; z-index:40; display:inline-flex; align-items:center; gap:7px;
     font-family:var(--mono); font-size:11px; color:var(--muted); background:var(--surface); border:1px solid var(--line);
@@ -191,6 +195,7 @@
   </aside>
 
   <div class="reader-wrap" id="readerWrap">
+    <div class="read-progress" id="readProgress" hidden aria-hidden="true"><i id="readProgressFill"></i></div>
     <article class="reader" id="reader" hidden></article>
     <button class="toc-toggle" id="tocToggle" hidden title="Table of contents" aria-label="Table of contents" aria-expanded="false"><span class="tt-ic">☰</span><span class="tt-tx">contents</span></button>
     <nav class="toc-pop" id="tocPop" hidden aria-label="Table of contents"></nav>
@@ -337,6 +342,7 @@ async function openArticle(url) {
   r.parentElement.scrollTop = 0;
   history.replaceState(null, '', '#' + encodeURIComponent(url));
   buildTOC();
+  $('#readProgressFill').style.width = '0%'; updateProgress();   // reset + show the reading-progress bar
 }
 
 // ── In-article table of contents ─────────────────────────────────────────────
@@ -384,8 +390,16 @@ function updateActiveHeading() {
   for (const h of tocHeadings) { if (h.el.offsetTop <= top) active = h; else break; }
   $('#tocPop').querySelectorAll('.toc-item').forEach((it) => it.classList.toggle('active', it.dataset.id === active.id));
 }
+// Reading progress: fill the top bar to the scroll fraction (hidden when the article fits)
+function updateProgress() {
+  const wrap = $('#readerWrap'), bar = $('#readProgress');
+  const max = wrap.scrollHeight - wrap.clientHeight;
+  if (max <= 8) { bar.hidden = true; return; }         // nothing to scroll → no progress to show
+  bar.hidden = false;
+  $('#readProgressFill').style.width = Math.max(0, Math.min(100, wrap.scrollTop / max * 100)).toFixed(1) + '%';
+}
 $('#readerWrap').addEventListener('scroll', () => {
-  if (tocRAF) return; tocRAF = requestAnimationFrame(() => { tocRAF = 0; updateActiveHeading(); });
+  if (tocRAF) return; tocRAF = requestAnimationFrame(() => { tocRAF = 0; updateActiveHeading(); updateProgress(); });
 });
 
 // ── Zero-dependency markdown → HTML ──────────────────────────────────────────
