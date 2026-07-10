@@ -35,6 +35,8 @@ Cache location: `$SCOUT_DB` (default `./.scout/cache.db`).
 
 ## Reading room (`scout serve`)
 
+![scout serve — the reading room: a shelf of cached pages and a clean serif reader](docs/web-view.png)
+
 ```bash
 scout fetch https://en.wikipedia.org/wiki/Zettelkasten     # read a few pages…
 scout serve                                                # → http://localhost:7950  (--port to change)
