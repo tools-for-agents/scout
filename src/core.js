@@ -88,6 +88,13 @@ function ftsQuery(q) {
 }
 
 export function search(query, { k = 8, max_tokens = 1800 } = {}) {
+  // Harden numeric args: a non-numeric query param arrives as NaN (the server
+  // parses ?k=abc with +q.k), and NaN bypasses the destructuring default. Left
+  // unguarded it breaks the SQL `LIMIT ?` bind (→ error result), and both
+  // `results.length >= NaN` and the budget check `tokens + tk > NaN` are always
+  // false, so the search over-returns. Fall back to the default on NaN / ≤0.
+  k = Number.isFinite(+k) && +k > 0 ? Math.floor(+k) : 8;
+  max_tokens = Number.isFinite(+max_tokens) && +max_tokens > 0 ? Math.floor(+max_tokens) : 1800;
   const m = ftsQuery(query);
   if (!m) return { query, count: 0, tokens: 0, results: [] };
   let rows;

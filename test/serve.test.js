@@ -10,7 +10,7 @@ const work = mkdtempSync(join(tmpdir(), 'scout-serve-'));
 process.env.SCOUT_DB = join(work, 'cache.db');
 process.on('exit', () => { try { rmSync(work, { recursive: true, force: true }); } catch {} });
 
-const { save } = await import('../src/core.js');
+const { save, search } = await import('../src/core.js');
 const { createScoutServer } = await import('../src/server.js');
 
 save({ url: 'https://example.com/reconnect', title: 'WebSocket reconnect backoff',
@@ -37,4 +37,20 @@ test('serve: library, search, page and the cache guard', async () => {
     const miss = await fetch(base + '/api/page?url=' + encodeURIComponent('https://never-fetched.example/x'));
     assert.equal(miss.status, 404, 'uncached url is 404 — the reading room never hits the network');
   } finally { server.close(); }
+});
+
+test('search coerces bad numeric args instead of erroring / over-returning', () => {
+  for (let i = 0; i < 4; i++) {
+    save({ url: `https://ex.com/sig-${i}`, title: `Signal ${i}`, description: 'x',
+      markdown: `# Signal ${i}\n\nA note about the shared signal term.`,
+      html_bytes: 1000, fetched_at: '2026-07-02T00:00:00.000Z' });
+  }
+  // a non-numeric k (NaN, e.g. from ?k=abc) used to break the `LIMIT ?` bind
+  // (undefined count) or over-return (results.length >= NaN never breaks)
+  const good = search('signal');
+  assert.ok(typeof good.count === 'number' && good.count >= 4, 'baseline search has a count');
+  for (const bad of [NaN, 0, -5, 'abc']) {
+    assert.equal(search('signal', { k: bad }).count, good.count, `k=${String(bad)} recovers the default count`);
+  }
+  assert.ok(search('signal', { max_tokens: 'xyz' }).tokens <= 1800, 'bad max_tokens falls back to the default budget');
 });
