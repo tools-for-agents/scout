@@ -46,7 +46,7 @@ A calm, zero-dependency web view of everything scout has read — the same cache
 
 - **The shelf** — every cached page as a card (title, source, when it was read, `~token` size), newest first.
 - **Search** your whole reading history (FTS5 + bm25) with matched terms highlighted.
-- **The reader** — clean, comfortable long-form: the extracted markdown rendered with real typographic hierarchy, in a **paper** or **night** theme.
+- **The reader** — clean, comfortable long-form: the extracted markdown rendered with real typographic hierarchy (including **images**), in a **paper** or **night** theme.
 - Read-only and **cache-only** — the web view never touches the network; `/api/page` returns 404 for anything not already read.
 
 Try the demo without a network fetch: `node scripts/seed.js` then `scout serve`.
@@ -83,6 +83,6 @@ Try the demo without a network fetch: `node scripts/seed.js` then `scout serve`.
 ## How it works
 
 - **Fetch** uses Node's global `fetch` (follows redirects, 20 s timeout, a plain user-agent).
-- **Extraction** is regex-based readability-lite: strip `<script>/<style>/<nav>/<footer>/…`, pick the densest `<article>`/`<main>`/`<body>` region, convert headings, links (resolved to absolute), code, lists, bold/italic, and decode HTML entities. Not a full DOM parse — but it reliably turns an article into readable prose at a fraction of the tokens.
+- **Extraction** is regex-based readability-lite: strip `<script>/<style>/<nav>/<footer>/…`, pick the densest `<article>`/`<main>`/`<body>` region, convert headings, links (resolved to absolute), **content images** (`<img>`/`<figure>` → markdown, tracking pixels dropped), code, lists, bold/italic, and decode HTML entities. Not a full DOM parse — but it reliably turns an article into readable prose at a fraction of the tokens.
 - **Cache** is a `node:sqlite` table keyed by URL; the same URL returns instantly unless `fresh`. An FTS5 mirror makes the whole history searchable by **bm25**, filled to a token budget (≈4 chars/token) — the same discipline as [`lens`](../lens) and [`cortex`](../cortex).
 - Non-HTML responses (JSON, plain text) are stored verbatim.

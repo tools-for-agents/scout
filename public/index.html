@@ -94,6 +94,7 @@
   .article p { margin:0 0 1.15em; }
   .article a { color:var(--accent); text-decoration:none; border-bottom:1px solid var(--accent-soft); }
   .article a:hover { border-bottom-color:var(--accent); }
+  .article .ar-img { display:block; max-width:100%; height:auto; margin:1.6em auto; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); }
   .article strong { color:var(--ink); font-weight:650; }
   .article em { font-style:italic; }
   .article ul, .article ol { margin:0 0 1.15em; padding-left:1.4em; }
@@ -278,6 +279,8 @@ function renderMarkdown(md) {
     .replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
+    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, src) =>       // images — before links (![…] contains […])
+      `<img class="ar-img" src="${src}" alt="${alt}" loading="lazy" />`)
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, txt, href) =>
       `<a href="${esc(href)}" target="_blank" rel="noopener">${txt}</a>`);
   while (i < lines.length) {

@@ -3,6 +3,21 @@
 //   SCOUT_DB=./.scout/cache.db node scripts/seed.js
 import { save } from '../src/core.js';
 
+// A tiny self-contained illustration (base64 SVG data-URI) so the reading room
+// shows a rendered image; amber-on-transparent reads on both the paper & night themes.
+const DIAGRAM_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 170" font-family="ui-sans-serif,system-ui,sans-serif">
+  <rect x="18" y="52" width="184" height="66" rx="10" fill="none" stroke="#e0a24e" stroke-width="2"/>
+  <text x="110" y="82" text-anchor="middle" fill="#e0a24e" font-size="15" font-weight="600">raw HTML</text>
+  <text x="110" y="104" text-anchor="middle" fill="#b0895a" font-size="12">~380 KB · all chrome</text>
+  <path d="M214 85 H342" stroke="#e0a24e" stroke-width="2" marker-end="url(#a)"/>
+  <text x="278" y="76" text-anchor="middle" fill="#e0a24e" font-size="12">scout</text>
+  <rect x="358" y="52" width="184" height="66" rx="10" fill="#e0a24e" fill-opacity="0.14" stroke="#e0a24e" stroke-width="2"/>
+  <text x="450" y="82" text-anchor="middle" fill="#e0a24e" font-size="15" font-weight="600">clean markdown</text>
+  <text x="450" y="104" text-anchor="middle" fill="#b0895a" font-size="12">~40 KB · ~90% smaller</text>
+  <defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#e0a24e"/></marker></defs>
+</svg>`;
+const DIAGRAM = 'data:image/svg+xml;base64,' + Buffer.from(DIAGRAM_SVG).toString('base64');
+
 const articles = [
   {
     url: 'https://tools-for-agents.dev/the-all-agent-company',
@@ -40,6 +55,8 @@ heavyweight SaaS for autonomous work. See also [zero dependencies](https://tools
 
 A web page is mostly chrome: nav, ads, cookie banners, scripts. An agent that reads the
 raw HTML pays for all of it in tokens. **scout** extracts just the article.
+
+![How scout strips a page down to the article](${DIAGRAM})
 
 ## The pipeline
 

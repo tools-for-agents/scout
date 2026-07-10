@@ -15,6 +15,8 @@ const PAGE = `<!doctype html><html><head>
     <p>Some <strong>bold</strong> and <em>italic</em> text with a
        <a href="/docs/page">relative link</a> and <a href="https://ext.com/a">external</a>.</p>
     <ul><li>one</li><li>two</li></ul>
+    <figure><img src="/img/diagram.png" alt="A diagram" /><figcaption>Fig 1.</figcaption></figure>
+    <img src="https://track.example/pixel.gif" width="1" height="1" alt="" />
     <pre>code block</pre>
     <script>alert('nope')</script>
   </article>
@@ -44,6 +46,13 @@ test('htmlToMarkdown resolves relative links to absolute', () => {
   const md = htmlToMarkdown(PAGE, 'https://site.com/post');
   assert.match(md, /\[relative link\]\(https:\/\/site\.com\/docs\/page\)/);
   assert.match(md, /\[external\]\(https:\/\/ext\.com\/a\)/);
+});
+
+test('htmlToMarkdown keeps content images (relative → absolute) and drops tracking pixels', () => {
+  const md = htmlToMarkdown(PAGE, 'https://site.com/post');
+  assert.match(md, /!\[A diagram\]\(https:\/\/site\.com\/img\/diagram\.png\)/, 'the figure image is kept as markdown');
+  assert.match(md, /\*Fig 1\.\*/, 'the figcaption is kept as an italic caption');
+  assert.doesNotMatch(md, /pixel\.gif/, 'the 1×1 tracking pixel is dropped');
 });
 
 test('extractLinks returns absolute, de-duplicated http links with text', () => {

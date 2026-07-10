@@ -49,7 +49,7 @@ function pickMain(html) {
 export function htmlToMarkdown(html, baseUrl = '') {
   let s = String(html)
     .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<(script|style|noscript|svg|template|iframe|form|figure)\b[^>]*>[\s\S]*?<\/\1>/gi, '');
+    .replace(/<(script|style|noscript|svg|template|iframe|form)\b[^>]*>[\s\S]*?<\/\1>/gi, '');
   let m = pickMain(s).replace(/<(nav|header|footer|aside)\b[^>]*>[\s\S]*?<\/\1>/gi, '');
 
   m = m
@@ -58,6 +58,17 @@ export function htmlToMarkdown(html, baseUrl = '') {
     .replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (x, c) => `\`${stripTags(c)}\``)
     .replace(/<blockquote\b[^>]*>([\s\S]*?)<\/blockquote>/gi, (x, c) => `\n\n> ${stripTags(c)}\n\n`)
     .replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, (x, c) => `\n- ${stripTags(c)}`)
+    .replace(/<figcaption\b[^>]*>([\s\S]*?)<\/figcaption>/gi, (x, c) => { const t = stripTags(c); return t ? `\n\n*${t}*\n\n` : ''; })
+    // keep images as markdown — the article's pictures are content, not chrome.
+    // (skip 1×1 tracking pixels / spacers; resolve relative srcs to absolute.)
+    .replace(/<img\b([^>]*?)\/?>/gi, (x, attrs) => {
+      const src = ((attrs.match(/\ssrc=["']([^"']+)["']/i) || attrs.match(/\sdata-src=["']([^"']+)["']/i)) || [])[1];
+      if (!src) return '';
+      if (/\b(?:width|height)=["']?1["']?/i.test(attrs) || /(?:spacer|pixel|blank|1x1|tracking)/i.test(src)) return '';
+      const alt = stripTags((attrs.match(/\salt=["']([^"']*)["']/i) || [])[1] || '');
+      const abs = /^(?:data:|https?:)/i.test(src) ? src : resolveUrl(src, baseUrl);
+      return `\n\n![${alt}](${abs})\n\n`;
+    })
     .replace(/<a\b[^>]*\shref=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (x, href, t) => {
       const txt = stripTags(t);
       if (!txt) return '';
