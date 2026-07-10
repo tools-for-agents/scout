@@ -28,9 +28,26 @@ scout fetch https://api.example.com/data.json --raw        # skip extraction
 scout search "luhmann note linking" -k 5                   # search your reading history
 scout links https://news.ycombinator.com --limit 30        # outbound links to crawl next
 scout list | scout forget https://old.example.com | scout stats
+scout serve                                                # → reading-room web view :7950
 ```
 
 Cache location: `$SCOUT_DB` (default `./.scout/cache.db`).
+
+## Reading room (`scout serve`)
+
+```bash
+scout fetch https://en.wikipedia.org/wiki/Zettelkasten     # read a few pages…
+scout serve                                                # → http://localhost:7950  (--port to change)
+```
+
+A calm, zero-dependency web view of everything scout has read — the same cache the agent recalls from:
+
+- **The shelf** — every cached page as a card (title, source, when it was read, `~token` size), newest first.
+- **Search** your whole reading history (FTS5 + bm25) with matched terms highlighted.
+- **The reader** — clean, comfortable long-form: the extracted markdown rendered with real typographic hierarchy, in a **paper** or **night** theme.
+- Read-only and **cache-only** — the web view never touches the network; `/api/page` returns 404 for anything not already read.
+
+Try the demo without a network fetch: `node scripts/seed.js` then `scout serve`.
 
 ## MCP server (for agents)
 

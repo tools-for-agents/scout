@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>scout · reading room</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☞</text></svg>" />
+<style>
+  :root {
+    /* night (default) — a lamp-lit reading desk */
+    --bg:#151210; --surface:#1d1916; --surface-2:#241f1a; --line:#2f2823; --line-2:#3d342c;
+    --ink:#ece5da; --ink-soft:#c9bfb2; --muted:#9d9184; --faint:#6f6459;
+    --accent:#e0a24e; --accent-soft:#3a2f1e; --mark:#f2c66a; --mark-bg:rgba(224,162,78,.22);
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Source Serif Pro","Charter",Georgia,serif;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,monospace;
+    --shadow:0 10px 40px rgba(0,0,0,.4);
+  }
+  :root[data-theme="paper"] {
+    /* paper — a bright reading desk by daylight */
+    --bg:#f2ede2; --surface:#fbf8f1; --surface-2:#f5f0e6; --line:#e3dccb; --line-2:#d6ccb8;
+    --ink:#2b2520; --ink-soft:#4c443b; --muted:#7a7065; --faint:#a99f90;
+    --accent:#b47a22; --accent-soft:#efe6d2; --mark:#9a6a15; --mark-bg:rgba(180,122,34,.2);
+    --shadow:0 10px 34px rgba(80,60,30,.12);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="night"]) {
+      --bg:#f2ede2; --surface:#fbf8f1; --surface-2:#f5f0e6; --line:#e3dccb; --line-2:#d6ccb8;
+      --ink:#2b2520; --ink-soft:#4c443b; --muted:#7a7065; --faint:#a99f90;
+      --accent:#b47a22; --accent-soft:#efe6d2; --mark:#9a6a15; --mark-bg:rgba(180,122,34,.2);
+      --shadow:0 10px 34px rgba(80,60,30,.12);
+    }
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body {
+    background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:14px;
+    height:100vh; overflow:hidden; -webkit-font-smoothing:antialiased;
+    display:grid; grid-template-columns:340px 1fr; grid-template-areas:"shelf reader";
+  }
+
+  /* ── Shelf (left) ─────────────────────────────────────────── */
+  .shelf { grid-area:shelf; background:var(--surface); border-right:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden; }
+  .shelf-head { padding:16px 18px 12px; border-bottom:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:10px; }
+  .brand .mk { font-size:20px; color:var(--accent); }
+  .brand b { font-size:16px; letter-spacing:.2px; }
+  .brand .sub { font-size:11px; color:var(--muted); letter-spacing:.3px; }
+  .brand .theme { margin-left:auto; background:var(--surface-2); border:1px solid var(--line); color:var(--muted);
+    width:30px; height:30px; border-radius:8px; cursor:pointer; font-size:14px; display:grid; place-items:center; }
+  .brand .theme:hover { color:var(--accent); border-color:var(--accent); }
+  .shelf-stats { display:flex; gap:16px; margin-top:13px; }
+  .shelf-stats div b { display:block; font-size:16px; font-variant-numeric:tabular-nums; }
+  .shelf-stats div span { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px; }
+
+  .searchbar { padding:12px 14px; border-bottom:1px solid var(--line); }
+  .searchbar .fld { display:flex; align-items:center; gap:9px; background:var(--bg); border:1px solid var(--line);
+    border-radius:9px; padding:0 11px; height:36px; transition:border-color .15s; }
+  .searchbar .fld:focus-within { border-color:var(--accent); }
+  .searchbar .ic { color:var(--muted); }
+  .searchbar input { flex:1; background:none; border:none; outline:none; color:var(--ink); font-size:13px; font-family:var(--sans); }
+  .searchbar input::placeholder { color:var(--faint); }
+
+  .list { flex:1; overflow:auto; padding:8px; }
+  .list-label { font-size:10px; color:var(--faint); text-transform:uppercase; letter-spacing:1px; padding:8px 10px 6px; }
+  .card { padding:12px 13px; border-radius:10px; cursor:pointer; border:1px solid transparent; transition:background .12s, border-color .12s; }
+  .card:hover { background:var(--surface-2); }
+  .card.active { background:var(--surface-2); border-color:var(--line-2); box-shadow:inset 3px 0 0 var(--accent); }
+  .card .t { font-family:var(--serif); font-size:15.5px; line-height:1.3; margin-bottom:5px; }
+  .card .m { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); }
+  .card .m .host { color:var(--accent); font-weight:600; }
+  .card .m .dot { color:var(--faint); }
+  .card .d { font-size:12px; color:var(--muted); margin-top:6px; line-height:1.45; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .card .ex { font-size:12px; color:var(--ink-soft); margin-top:6px; line-height:1.5; }
+  .card .ex mark, .reader mark { background:var(--mark-bg); color:var(--mark); border-radius:2px; padding:0 2px; }
+  .list-empty { padding:24px 14px; color:var(--muted); font-size:13px; text-align:center; }
+
+  /* ── Reader (right) ───────────────────────────────────────── */
+  .reader-wrap { grid-area:reader; overflow:auto; position:relative; }
+  .reader { max-width:720px; margin:0 auto; padding:54px 40px 120px; }
+  .kicker { font-size:12px; color:var(--accent); text-transform:uppercase; letter-spacing:1.4px; font-weight:600; margin-bottom:14px; }
+  .reader h1.title { font-family:var(--serif); font-size:38px; line-height:1.15; letter-spacing:-.4px; margin:0 0 16px; text-wrap:balance; }
+  .byline { display:flex; flex-wrap:wrap; align-items:center; gap:9px; font-size:12.5px; color:var(--muted); padding-bottom:22px; margin-bottom:30px; border-bottom:1px solid var(--line); }
+  .byline .dot { color:var(--faint); }
+  .byline a { color:var(--accent); text-decoration:none; }
+  .byline a:hover { text-decoration:underline; }
+  .byline .chip { font-family:var(--mono); font-size:11px; background:var(--surface-2); border:1px solid var(--line); border-radius:20px; padding:2px 9px; color:var(--muted); }
+
+  /* article body — serif, comfortable measure */
+  .article { font-family:var(--serif); font-size:18px; line-height:1.72; color:var(--ink-soft); }
+  .article > *:first-child { margin-top:0; }
+  .article h1, .article h2, .article h3 { font-family:var(--serif); color:var(--ink); line-height:1.25; margin:1.9em 0 .55em; letter-spacing:-.2px; }
+  .article h1 { font-size:27px; } .article h2 { font-size:23px; } .article h3 { font-size:19.5px; }
+  .article p { margin:0 0 1.15em; }
+  .article a { color:var(--accent); text-decoration:none; border-bottom:1px solid var(--accent-soft); }
+  .article a:hover { border-bottom-color:var(--accent); }
+  .article strong { color:var(--ink); font-weight:650; }
+  .article em { font-style:italic; }
+  .article ul, .article ol { margin:0 0 1.15em; padding-left:1.4em; }
+  .article li { margin:.4em 0; padding-left:.2em; }
+  .article li::marker { color:var(--accent); }
+  .article blockquote { margin:1.4em 0; padding:2px 0 2px 20px; border-left:3px solid var(--accent); color:var(--ink); font-style:italic; }
+  .article code { font-family:var(--mono); font-size:.86em; background:var(--surface-2); border:1px solid var(--line); border-radius:5px; padding:1px 5px; }
+  .article pre { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px 16px; overflow:auto; margin:1.3em 0; }
+  .article pre code { background:none; border:none; padding:0; font-size:13px; line-height:1.55; color:var(--ink-soft); }
+  .article hr { border:none; border-top:1px solid var(--line); margin:2em 0; }
+
+  /* welcome */
+  .welcome { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:30px; color:var(--muted); }
+  .welcome .big { font-size:52px; color:var(--accent); margin-bottom:14px; }
+  .welcome h2 { font-family:var(--serif); color:var(--ink); font-size:26px; font-weight:600; margin:0 0 8px; }
+  .welcome p { max-width:440px; font-size:14.5px; line-height:1.65; }
+  .welcome kbd { font-family:var(--mono); font-size:12px; background:var(--surface-2); border:1px solid var(--line); border-radius:5px; padding:1px 6px; color:var(--accent); }
+
+  ::-webkit-scrollbar { width:11px; }
+  ::-webkit-scrollbar-thumb { background:var(--line-2); border-radius:8px; border:3px solid var(--surface); }
+  .reader-wrap::-webkit-scrollbar-thumb { border-color:var(--bg); }
+
+  @media (max-width:800px) {
+    body { grid-template-columns:1fr; grid-template-areas:"shelf"; }
+    .reader-wrap { display:none; }
+    body.reading { grid-template-areas:"reader"; }
+    body.reading .shelf { display:none; }
+    body.reading .reader-wrap { display:block; }
+    .reader { padding:34px 22px 90px; }
+    .reader h1.title { font-size:30px; }
+  }
+</style>
+</head>
+<body>
+  <aside class="shelf">
+    <div class="shelf-head">
+      <div class="brand">
+        <span class="mk">☞</span>
+        <div><b>scout</b> <span class="sub">· reading room</span></div>
+        <button class="theme" id="theme" title="Toggle light / dark">◐</button>
+      </div>
+      <div class="shelf-stats" id="stats"></div>
+    </div>
+    <div class="searchbar">
+      <div class="fld"><span class="ic">⌕</span><input id="q" placeholder="search everything you've read…" autocomplete="off" spellcheck="false" /></div>
+    </div>
+    <div class="list" id="list"></div>
+  </aside>
+
+  <div class="reader-wrap" id="readerWrap">
+    <article class="reader" id="reader" hidden></article>
+    <div class="welcome" id="welcome">
+      <div class="big">☞</div>
+      <h2>The agent's reading room</h2>
+      <p>Every page scout has read, kept as clean markdown and fully searchable. Pick an article from the shelf, or <b>search your whole reading history</b> — the same index an agent recalls from.</p>
+    </div>
+  </div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const api = (p) => fetch(p).then((r) => r.json());
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+let LIB = [], activeUrl = null;
+
+// ── Theme ────────────────────────────────────────────────────────────────────
+(function initTheme() {
+  const saved = localStorage.getItem('scout:theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+})();
+$('#theme').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const dark = cur ? cur === 'night' : !matchMedia('(prefers-color-scheme: light)').matches;
+  const next = dark ? 'paper' : 'night';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('scout:theme', next);
+});
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+(async () => {
+  const [stats, lib] = await Promise.all([api('/api/stats'), api('/api/library')]);
+  LIB = lib.pages;
+  renderStats(stats); renderList(LIB);
+  // deep-link: #<encoded url>
+  const h = decodeURIComponent(location.hash.slice(1));
+  if (h && LIB.some((p) => p.url === h)) openArticle(h);
+})();
+
+function renderStats(s) {
+  const kb = (s.total_md_bytes / 1024).toFixed(0);
+  const saved = Math.round((s.total_html_bytes - s.total_md_bytes) / Math.max(1, s.total_html_bytes) * 100);
+  $('#stats').innerHTML = `
+    <div><b>${s.pages}</b><span>pages</span></div>
+    <div><b>${kb}<span style="font-size:11px"> KB</span></b><span>clean markdown</span></div>
+    ${s.total_html_bytes > s.total_md_bytes ? `<div><b>${saved}%</b><span>lighter than html</span></div>` : ''}`;
+}
+
+// ── List / search results ────────────────────────────────────────────────────
+function renderList(pages) {
+  $('#list').innerHTML = `<div class="list-label">${pages.length} article${pages.length === 1 ? '' : 's'} · newest first</div>` +
+    (pages.map(card).join('') || '<div class="list-empty">Nothing cached yet. Run <code>scout fetch &lt;url&gt;</code>.</div>');
+}
+function card(p) {
+  return `<div class="card${activeUrl === p.url ? ' active' : ''}" data-url="${esc(p.url)}">
+    <div class="t">${esc(p.title || p.url)}</div>
+    <div class="m"><span class="host">${esc(p.host || 'web')}</span><span class="dot">·</span><span>${fmtDate(p.fetched_at)}</span><span class="dot">·</span><span>~${fmtTok(p.tokens)} tok</span></div>
+    ${p.description ? `<div class="d">${esc(p.description)}</div>` : ''}
+  </div>`;
+}
+function resultCard(r) {
+  return `<div class="card" data-url="${esc(r.url)}">
+    <div class="t">${esc(r.title || r.url)}</div>
+    <div class="m"><span class="host">score ${r.score}</span><span class="dot">·</span><span>~${r.tokens} tok</span></div>
+    <div class="ex">${markExcerpt(r.excerpt)}</div>
+  </div>`;
+}
+const markExcerpt = (s) => esc(s).replaceAll('⟦', '<mark>').replaceAll('⟧', '</mark>');
+
+$('#list').addEventListener('click', (e) => {
+  const c = e.target.closest('.card'); if (c) openArticle(c.dataset.url);
+});
+
+// ── Search ───────────────────────────────────────────────────────────────────
+let sTimer;
+$('#q').addEventListener('input', (e) => {
+  clearTimeout(sTimer);
+  const q = e.target.value.trim();
+  if (!q) { renderList(LIB); return; }
+  sTimer = setTimeout(async () => {
+    const r = await api('/api/search?k=20&q=' + encodeURIComponent(q));
+    $('#list').innerHTML = r.count
+      ? `<div class="list-label">${r.count} hit${r.count === 1 ? '' : 's'} · ~${r.tokens} tokens</div>` + r.results.map(resultCard).join('')
+      : `<div class="list-empty">No matches for “${esc(q)}”.</div>`;
+  }, 170);
+});
+$('#q').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.target.value = ''; renderList(LIB); e.target.blur(); } });
+
+// ── Open an article ──────────────────────────────────────────────────────────
+async function openArticle(url) {
+  activeUrl = url;
+  document.querySelectorAll('.card').forEach((c) => c.classList.toggle('active', c.dataset.url === url));
+  const p = await api('/api/page?url=' + encodeURIComponent(url));
+  if (p.error) return;
+  const words = (p.markdown.match(/\S+/g) || []).length;
+  const mins = Math.max(1, Math.round(words / 200));
+  $('#welcome').style.display = 'none';
+  document.body.classList.add('reading');
+  const r = $('#reader'); r.hidden = false;
+  r.innerHTML = `
+    <div class="kicker">${esc(p.host || 'web')}</div>
+    <h1 class="title">${esc(p.title || p.url)}</h1>
+    <div class="byline">
+      <a href="${esc(p.final_url || p.url)}" target="_blank" rel="noopener">${esc(shortUrl(p.final_url || p.url))} ↗</a>
+      <span class="dot">·</span><span>read ${fmtDate(p.fetched_at)}</span>
+      <span class="dot">·</span><span>${mins} min</span>
+      <span class="chip">~${fmtTok(p.tokens)} tok</span>
+    </div>
+    <div class="article">${renderMarkdown(p.markdown)}</div>`;
+  r.parentElement.scrollTop = 0;
+  history.replaceState(null, '', '#' + encodeURIComponent(url));
+}
+
+// ── Zero-dependency markdown → HTML ──────────────────────────────────────────
+function renderMarkdown(md) {
+  const lines = String(md).replace(/\r\n?/g, '\n').split('\n');
+  let html = '', i = 0;
+  const inline = (t) => esc(t)
+    .replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, txt, href) =>
+      `<a href="${esc(href)}" target="_blank" rel="noopener">${txt}</a>`);
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+    // fenced code
+    if (/^```/.test(line)) {
+      const buf = []; i++;
+      while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
+      i++; html += `<pre><code>${esc(buf.join('\n'))}</code></pre>`; continue;
+    }
+    // indented code block (4 spaces / tab)
+    if (/^( {4}|\t)/.test(line)) {
+      const buf = [];
+      while (i < lines.length && (/^( {4}|\t)/.test(lines[i]) || !lines[i].trim())) {
+        if (!lines[i].trim() && !(lines[i + 1] && /^( {4}|\t)/.test(lines[i + 1]))) break;
+        buf.push(lines[i++].replace(/^( {4}|\t)/, ''));
+      }
+      html += `<pre><code>${esc(buf.join('\n'))}</code></pre>`; continue;
+    }
+    // heading
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { const n = Math.min(3, h[1].length); html += `<h${n}>${inline(h[2])}</h${n}>`; i++; continue; }
+    // hr
+    if (/^(---+|\*\*\*+|___+)\s*$/.test(line)) { html += '<hr />'; i++; continue; }
+    // blockquote
+    if (/^>\s?/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) buf.push(lines[i++].replace(/^>\s?/, ''));
+      html += `<blockquote>${renderMarkdown(buf.join('\n'))}</blockquote>`; continue;
+    }
+    // unordered list
+    if (/^[-*+]\s+/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^[-*+]\s+/.test(lines[i])) buf.push(`<li>${inline(lines[i++].replace(/^[-*+]\s+/, ''))}</li>`);
+      html += `<ul>${buf.join('')}</ul>`; continue;
+    }
+    // ordered list
+    if (/^\d+\.\s+/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i])) buf.push(`<li>${inline(lines[i++].replace(/^\d+\.\s+/, ''))}</li>`);
+      html += `<ol>${buf.join('')}</ol>`; continue;
+    }
+    // paragraph (gather until blank / block start)
+    const buf = [];
+    while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|>\s?|[-*+]\s|\d+\.\s|```|( {4}|\t)|(---+|\*\*\*+|___+)\s*$)/.test(lines[i])) buf.push(lines[i++]);
+    html += `<p>${inline(buf.join(' '))}</p>`;
+  }
+  return html;
+}
+
+// ── formatting helpers ───────────────────────────────────────────────────────
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso), now = new Date();
+  const days = Math.floor((now - d) / 86400000);
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return days + 'd ago';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+const fmtTok = (n) => n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n || 0);
+const shortUrl = (u) => { try { const x = new URL(u); return (x.host.replace(/^www\./, '') + x.pathname).replace(/\/$/, '').slice(0, 52); } catch { return u; } };
+
+// "/" focuses search
+addEventListener('keydown', (e) => {
+  if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); $('#q').focus(); }
+});
+</script>
+</body>
+</html>

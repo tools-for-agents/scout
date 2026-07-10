@@ -4,6 +4,7 @@
 //   scout search "<query>" [-k 8] [--tokens 1800]
 //   scout links <url> [--limit 100]
 //   scout list [-k 25] | scout forget <url> | scout stats
+//   scout serve [--port 7950]
 import * as scout from './core.js';
 
 const [, , cmd, ...rest] = process.argv;
@@ -42,6 +43,9 @@ try {
     out(scout.forget(arg()));
   } else if (cmd === 'stats') {
     out(scout.stats());
+  } else if (cmd === 'serve') {
+    const { serve } = await import('./server.js');
+    serve({ port: +flag('--port', process.env.SCOUT_PORT || 7950) });
   } else {
     out(`scout — the agent's web reader (fetch → clean markdown → cached → searchable)
 
@@ -50,6 +54,7 @@ try {
   scout links <url> [--limit N]                      outbound links from a page
   scout list [-k N]                                  recently fetched pages
   scout forget <url> | scout stats
+  scout serve [--port 7950]                          browsable reading-room web view
 
   Cache: $SCOUT_DB (default ./.scout/cache.db). Re-fetching a cached URL is free unless --fresh.`);
   }

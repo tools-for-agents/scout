@@ -29,6 +29,26 @@ function shape(row, max_tokens, fromCache) {
     html_bytes: row.html_bytes, md_bytes: row.md_bytes, tokens: estTokens(md), truncated, markdown: md };
 }
 
+const hostOf = (u) => { try { return new URL(u).host.replace(/^www\./, ''); } catch { return ''; } };
+
+// Persist a page into the cache + FTS index. Shared by fetchUrl and the seed.
+export function save({ url, final_url, title, description = '', markdown = '', content_type = 'text/html',
+  status = 200, html_bytes, md_bytes, fetched_at } = {}) {
+  url = normUrl(url);
+  final_url = final_url || url;
+  html_bytes = html_bytes ?? markdown.length;
+  md_bytes = md_bytes ?? markdown.length;
+  run(`INSERT INTO pages (url,final_url,title,description,markdown,content_type,status,html_bytes,md_bytes,fetched_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(url) DO UPDATE SET final_url=excluded.final_url, title=excluded.title,
+         description=excluded.description, markdown=excluded.markdown, content_type=excluded.content_type,
+         status=excluded.status, html_bytes=excluded.html_bytes, md_bytes=excluded.md_bytes, fetched_at=excluded.fetched_at`,
+    url, final_url, title, description, markdown, content_type, status, html_bytes, md_bytes, fetched_at || nowISO());
+  run('DELETE FROM pages_fts WHERE url=?', url);
+  run('INSERT INTO pages_fts (url,title,markdown) VALUES (?,?,?)', url, title, markdown);
+  return get('SELECT * FROM pages WHERE url=?', url);
+}
+
 // ── fetch a URL → clean markdown (read-through cache) ──────────────────────────
 export async function fetchUrl(url, { fresh = false, max_tokens = 6000, raw = false, timeout = 20000 } = {}) {
   url = normUrl(url);
@@ -41,15 +61,24 @@ export async function fetchUrl(url, { fresh = false, max_tokens = 6000, raw = fa
   const description = isHtml ? extractDescription(r.text) : '';
   const markdown = raw || !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl);
 
-  run(`INSERT INTO pages (url,final_url,title,description,markdown,content_type,status,html_bytes,md_bytes,fetched_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)
-       ON CONFLICT(url) DO UPDATE SET final_url=excluded.final_url, title=excluded.title,
-         description=excluded.description, markdown=excluded.markdown, content_type=excluded.content_type,
-         status=excluded.status, html_bytes=excluded.html_bytes, md_bytes=excluded.md_bytes, fetched_at=excluded.fetched_at`,
-    url, r.finalUrl, title, description, markdown, r.contentType, r.status, r.text.length, markdown.length, nowISO());
-  run('DELETE FROM pages_fts WHERE url=?', url);
-  run('INSERT INTO pages_fts (url,title,markdown) VALUES (?,?,?)', url, title, markdown);
+  save({ url, final_url: r.finalUrl, title, description, markdown, content_type: r.contentType,
+    status: r.status, html_bytes: r.text.length, md_bytes: markdown.length });
   return shape(get('SELECT * FROM pages WHERE url=?', url), max_tokens, false);
+}
+
+// ── read-only "reading room" views (serve the cache; never hit the network) ────
+export function library({ k = 1000 } = {}) {
+  const pages = all(`SELECT url, final_url, title, description, status, html_bytes, md_bytes, fetched_at
+                     FROM pages ORDER BY fetched_at DESC LIMIT ?`, k)
+    .map((p) => ({ ...p, host: hostOf(p.final_url || p.url), tokens: Math.ceil((p.md_bytes || 0) / 4) }));
+  return { count: pages.length, pages };
+}
+
+export function page(url) {
+  url = normUrl(url);
+  const row = get('SELECT * FROM pages WHERE url=?', url);
+  if (!row) return null;
+  return { ...shape(row, 0, true), host: hostOf(row.final_url || row.url) };
 }
 
 // ── search everything you've read (FTS5 + bm25, token-budgeted snippets) ──────
