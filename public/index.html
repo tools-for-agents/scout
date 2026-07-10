@@ -59,6 +59,10 @@
   .searchbar .fld:focus-within { border-color:var(--accent); }
   .searchbar .ic { color:var(--muted); }
   .searchbar input { flex:1; background:none; border:none; outline:none; color:var(--ink); font-size:13px; font-family:var(--sans); }
+  /* ── Accessibility: a visible focus ring for keyboard users on every control ── */
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .card:focus-visible, .rchip:focus-visible, .toc-item:focus-visible { outline-offset:-2px; }
   .searchbar input::placeholder { color:var(--faint); }
 
   .recent { padding:9px 12px 6px; border-bottom:1px solid var(--line); }
@@ -183,7 +187,7 @@
       <div class="brand">
         <span class="mk">☞</span>
         <div><b>scout</b> <span class="sub">· reading room</span></div>
-        <button class="theme" id="theme" title="Toggle light / dark">◐</button>
+        <button class="theme" id="theme" title="Toggle light / dark" aria-label="Toggle light / dark theme">◐</button>
       </div>
       <div class="shelf-stats" id="stats"></div>
     </div>
@@ -283,14 +287,14 @@ function renderList(pages) {
     (pages.map(card).join('') || '<div class="list-empty">Nothing cached yet. Run <code>scout fetch &lt;url&gt;</code>.</div>');
 }
 function card(p) {
-  return `<div class="card${activeUrl === p.url ? ' active' : ''}" data-url="${esc(p.url)}">
+  return `<div class="card${activeUrl === p.url ? ' active' : ''}" data-url="${esc(p.url)}" tabindex="0" role="button" aria-label="Read ${esc(p.title || p.url)}">
     <div class="t">${esc(p.title || p.url)}</div>
     <div class="m"><span class="host">${esc(p.host || 'web')}</span><span class="dot">·</span><span>${fmtDate(p.fetched_at)}</span><span class="dot">·</span><span>~${fmtTok(p.tokens)} tok</span></div>
     ${p.description ? `<div class="d">${esc(p.description)}</div>` : ''}
   </div>`;
 }
 function resultCard(r) {
-  return `<div class="card" data-url="${esc(r.url)}">
+  return `<div class="card" data-url="${esc(r.url)}" tabindex="0" role="button" aria-label="Read ${esc(r.title || r.url)}">
     <div class="t">${esc(r.title || r.url)}</div>
     <div class="m"><span class="host">score ${r.score}</span><span class="dot">·</span><span>~${r.tokens} tok</span></div>
     <div class="ex">${markExcerpt(r.excerpt)}</div>
@@ -300,6 +304,10 @@ const markExcerpt = (s) => esc(s).replaceAll('⟦', '<mark>').replaceAll('⟧', 
 
 $('#list').addEventListener('click', (e) => {
   const c = e.target.closest('.card'); if (c) openArticle(c.dataset.url);
+});
+$('#list').addEventListener('keydown', (e) => {   // keyboard-operable article cards
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const c = e.target.closest('.card'); if (c) { e.preventDefault(); openArticle(c.dataset.url); }
 });
 
 // ── Search ───────────────────────────────────────────────────────────────────
