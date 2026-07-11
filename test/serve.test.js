@@ -10,7 +10,7 @@ const work = mkdtempSync(join(tmpdir(), 'scout-serve-'));
 process.env.SCOUT_DB = join(work, 'cache.db');
 process.on('exit', () => { try { rmSync(work, { recursive: true, force: true }); } catch {} });
 
-const { save, search, related } = await import('../src/core.js');
+const { save, search, related, overview } = await import('../src/core.js');
 const { createScoutServer } = await import('../src/server.js');
 
 save({ url: 'https://example.com/reconnect', title: 'WebSocket reconnect backoff',
@@ -70,4 +70,49 @@ test('related surfaces other cached pages from the same host', () => {
   assert.ok(!rel.pages.some((p) => p.url === 'https://blog.example.org/post-0'), 'excludes the current page');
   assert.ok(!rel.pages.some((p) => p.host === 'other.example.net'), 'no cross-host leak');
   assert.deepEqual(related('https://never.cached/x').pages, [], 'an uncached url yields an empty list, not an error');
+});
+
+test('overview: the reading history adds up — tokens saved, hosts, days, heaviest', async () => {
+  // a second host, a different day, and a page whose raw HTML dwarfs its markdown
+  save({ url: 'https://news.example.org/a', title: 'Bloated news page',
+    markdown: 'Two sentences of actual content.',
+    html_bytes: 400_000, fetched_at: '2026-07-03T00:00:00.000Z' });
+  save({ url: 'https://news.example.org/b', title: 'Another from the same host',
+    markdown: 'Short.', html_bytes: 8_000, fetched_at: '2026-07-03T09:00:00.000Z' });
+
+  const o = overview();
+  // the headline: raw HTML would have cost far more than the markdown scout kept
+  assert.ok(o.html_tokens > o.md_tokens, 'raw html costs more than the kept markdown');
+  assert.equal(o.saved_tokens, o.html_tokens - o.md_tokens, 'saved = html - markdown');
+  assert.ok(o.saved_pct > 90, `a bloated corpus is >90% lighter (got ${o.saved_pct}%)`);
+  assert.ok(o.pages >= 3, 'counts every cached page');   // other tests share this cache
+
+  // hosts are grouped, ranked by pages
+  const hosts = Object.fromEntries(o.by_host.map((h) => [h.host, h.pages]));
+  assert.equal(hosts['news.example.org'], 2, 'groups both pages under one host');
+  const counts = o.by_host.map((h) => h.pages);
+  assert.deepEqual(counts, [...counts].sort((a, b) => b - a), 'hosts are ranked most-read first');
+
+  // reading over time, oldest day first
+  const days = o.by_day.map((d) => d.day);
+  assert.deepEqual(days, [...days].sort(), 'days run oldest → newest');
+  assert.ok(days.includes('2026-07-03'), 'the day those pages were read shows up');
+  assert.equal(o.by_day.reduce((a, d) => a + d.pages, 0), o.pages, 'every page lands in exactly one day bucket');
+
+  // heaviest = what raw HTML would have cost, worst first
+  assert.equal(o.heaviest[0].title, 'Bloated news page', 'the 400KB page is the heaviest read');
+  assert.ok(o.heaviest[0].html_tokens > o.heaviest[0].tokens * 10, 'and its html dwarfs its markdown');
+
+  // a bad ?top must not empty every list (NaN → slice(0,NaN))
+  assert.equal(overview({ top: 'abc' }).by_host.length, o.by_host.length, 'a bad top falls back to the default');
+  assert.equal(overview({ top: 1 }).by_host.length, 1, 'top caps the lists');
+
+  // and it is served
+  const server = createScoutServer();
+  await new Promise((r) => server.listen(0, r));
+  const base = `http://localhost:${server.address().port}`;
+  try {
+    const res = await fetch(base + '/api/overview').then((r) => r.json());
+    assert.equal(res.saved_tokens, o.saved_tokens, '/api/overview serves the same digest');
+  } finally { server.close(); }
 });

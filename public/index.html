@@ -49,7 +49,44 @@
   .brand .theme { margin-left:auto; background:var(--surface-2); border:1px solid var(--line); color:var(--muted);
     width:30px; height:30px; border-radius:8px; cursor:pointer; font-size:14px; display:grid; place-items:center; }
   .brand .theme:hover { color:var(--accent); border-color:var(--accent); }
-  .shelf-stats { display:flex; gap:16px; margin-top:13px; }
+  /* ── Reading overview: what the whole history adds up to ── */
+  .ovw { padding:38px 44px 70px; max-width:760px; overflow:auto; height:100%; }
+  .ovw h2 { margin:0 0 4px; font-size:23px; letter-spacing:-.2px; }
+  .ovw .ovw-sub { color:var(--muted); font-size:13px; margin-bottom:26px; }
+  .ovw .ovw-x { float:right; background:none; border:1px solid var(--line); color:var(--muted); border-radius:9px;
+    width:30px; height:30px; font-size:17px; line-height:1; cursor:pointer; }
+  .ovw .ovw-x:hover { color:var(--ink); border-color:var(--accent); }
+  .saved { background:var(--surface-2); border:1px solid var(--line); border-radius:14px; padding:20px 22px; margin-bottom:26px; }
+  .saved .big-n { font-size:34px; font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; letter-spacing:-.5px; }
+  .saved .cap { color:var(--muted); font-size:12.5px; margin-top:2px; }
+  .saved .bar { display:flex; height:9px; border-radius:20px; overflow:hidden; margin-top:15px; background:var(--line); }
+  .saved .bar .md { background:var(--accent); }
+  .saved .bar .cut { background:repeating-linear-gradient(45deg,var(--line-2),var(--line-2) 4px,transparent 4px,transparent 8px); flex:1; }
+  .saved .keyrow { display:flex; gap:18px; margin-top:9px; font-size:11.5px; color:var(--muted); font-family:var(--mono); }
+  .saved .keyrow i { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+  .ovw h3 { font-size:11px; text-transform:uppercase; letter-spacing:1.1px; color:var(--faint); margin:0 0 12px; }
+  .ovw-sec { margin-bottom:28px; }
+  .hostrow { display:flex; align-items:center; gap:10px; padding:5px 0; cursor:pointer; border-radius:8px; }
+  .hostrow:hover .hn { color:var(--accent); }
+  .hostrow .hn { width:170px; font-size:12.5px; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hostrow .hb { flex:1; height:7px; background:var(--line); border-radius:20px; overflow:hidden; }
+  .hostrow .hb i { display:block; height:100%; background:var(--accent); border-radius:20px; }
+  .hostrow .hc { width:64px; text-align:right; font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .days { display:flex; align-items:flex-end; gap:3px; height:64px; }
+  /* cap the width: a history of three days should read as three bars, not three
+     slabs stretched across the pane — but a long history still fills it */
+  .days .day { flex:1; min-width:4px; max-width:26px; background:var(--accent); border-radius:3px 3px 0 0; opacity:.75; }
+  .days .day:hover { opacity:1; }
+  .dayaxis { font-family:var(--mono); font-size:10px; color:var(--faint); margin-top:7px; }
+  .heavy { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+  .heavy:last-child { border-bottom:none; }
+  .heavy:hover .ht { color:var(--accent); }
+  .heavy .ht { flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .heavy .hh { font-family:var(--mono); font-size:10.5px; color:var(--faint); }
+  .heavy .hk { font-family:var(--mono); font-size:11px; color:var(--muted); white-space:nowrap; }
+  .heavy .hk b { color:var(--accent); }
+  .shelf-stats { display:flex; gap:16px; margin-top:13px; cursor:pointer; border-radius:9px; }
+  .shelf-stats:hover b { color:var(--accent); }
   .shelf-stats div b { display:block; font-size:16px; font-variant-numeric:tabular-nums; }
   .shelf-stats div span { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px; }
 
@@ -208,7 +245,7 @@
         <div><b>scout</b> <span class="sub">· reading room</span></div>
         <button class="theme" id="theme" title="Toggle light / dark" aria-label="Toggle light / dark theme">◐</button>
       </div>
-      <div class="shelf-stats" id="stats"></div>
+      <div class="shelf-stats" id="stats" role="button" tabindex="0" title="Reading overview" aria-label="Open the reading overview"></div>
     </div>
     <div class="searchbar">
       <div class="fld"><span class="ic">⌕</span><input id="q" placeholder="search everything you've read…" autocomplete="off" spellcheck="false" /></div>
@@ -228,6 +265,7 @@
       <h2>The agent's reading room</h2>
       <p>Every page scout has read, kept as clean markdown and fully searchable. Pick an article from the shelf, or <b>search your whole reading history</b> — the same index an agent recalls from.</p>
     </div>
+    <section class="ovw" id="overview" hidden aria-label="Reading overview"></section>
   </div>
 
 <script>
@@ -301,6 +339,84 @@ function renderStats(s) {
     ${s.total_html_bytes > s.total_md_bytes ? `<div><b>${saved}%</b><span>lighter than html</span></div>` : ''}`;
 }
 
+// ── Reading overview — what the whole history adds up to ─────────────────────
+// The headline is in TOKENS, not KB: raw HTML is what an agent would have paid
+// to read, and the markdown scout kept is what it actually pays. That gap is the
+// entire pitch, and until now nothing showed it.
+const fmtN = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+async function showOverview() {
+  const o = await api('/api/overview?top=8');
+  $('#reader').hidden = true; $('#welcome').style.display = 'none';
+  $('#tocToggle').hidden = true; $('#tocPop').hidden = true;
+  document.body.classList.add('reading');            // on mobile this hides the shelf, same as an article
+  const ov = $('#overview'); ov.hidden = false;
+
+  const mdPct = o.html_tokens ? Math.max(1, Math.round(o.md_tokens / o.html_tokens * 100)) : 100;
+  const maxHost = Math.max(1, ...o.by_host.map((h) => h.pages));
+  const maxDay = Math.max(1, ...o.by_day.map((d) => d.pages));
+
+  ov.innerHTML = `
+    <button class="ovw-x" id="ovwX" title="Close" aria-label="Close overview">×</button>
+    <h2>Your reading, in tokens</h2>
+    <div class="ovw-sub">${o.pages} page${o.pages === 1 ? '' : 's'} read through scout.</div>
+
+    <div class="saved">
+      <div class="big-n">~${fmtN(o.saved_tokens)} tokens saved</div>
+      <div class="cap">Reading these pages as raw HTML would have cost <b>~${fmtN(o.html_tokens)}</b> tokens.
+        scout kept <b>~${fmtN(o.md_tokens)}</b> — <b>${o.saved_pct}% lighter</b>.</div>
+      <div class="bar"><span class="md" style="width:${mdPct}%"></span><span class="cut"></span></div>
+      <div class="keyrow">
+        <span><i style="background:var(--accent)"></i>markdown kept ~${fmtN(o.md_tokens)}</span>
+        <span><i style="background:var(--line-2)"></i>html stripped ~${fmtN(o.saved_tokens)}</span>
+      </div>
+    </div>
+
+    <div class="ovw-sec">
+      <h3>Where you read</h3>
+      ${o.by_host.map((h) => `
+        <div class="hostrow" data-host="${esc(h.host)}" role="button" tabindex="0" title="Filter the shelf to ${esc(h.host)}">
+          <span class="hn">${esc(h.host)}</span>
+          <span class="hb"><i style="width:${Math.round(h.pages / maxHost * 100)}%"></i></span>
+          <span class="hc">${h.pages} · ~${fmtN(h.tokens)}</span>
+        </div>`).join('') || '<div class="ovw-sub">nothing yet</div>'}
+    </div>
+
+    <div class="ovw-sec">
+      <h3>Reading over time</h3>
+      <div class="days">
+        ${o.by_day.map((d) => `<span class="day" style="height:${Math.max(6, Math.round(d.pages / maxDay * 100))}%" title="${esc(d.day)}: ${d.pages} page${d.pages === 1 ? '' : 's'}"></span>`).join('') || ''}
+      </div>
+      ${o.by_day.length ? `<div class="dayaxis">${esc(o.by_day[0].day)} → ${esc(o.by_day.at(-1).day)} · ${o.by_day.length} day${o.by_day.length === 1 ? '' : 's'} of reading</div>` : '<div class="ovw-sub">nothing yet</div>'}
+    </div>
+
+    <div class="ovw-sec">
+      <h3>Heaviest reads <span style="text-transform:none;letter-spacing:0">— what raw HTML would have cost</span></h3>
+      ${o.heaviest.map((p) => `
+        <div class="heavy" data-url="${esc(p.url)}" role="button" tabindex="0" title="${esc(p.title)}">
+          <span class="ht">${esc(p.title)}<span class="hh"> · ${esc(p.host)}</span></span>
+          <span class="hk">~${fmtN(p.html_tokens)} → <b>~${fmtN(p.tokens)}</b></span>
+        </div>`).join('') || '<div class="ovw-sub">nothing yet</div>'}
+    </div>`;
+}
+function hideOverview() {
+  $('#overview').hidden = true;
+  document.body.classList.remove('reading');
+  if (!activeUrl) $('#welcome').style.display = '';
+}
+$('#stats').addEventListener('click', showOverview);
+$('#overview').addEventListener('click', (e) => {
+  if (e.target.closest('#ovwX')) return hideOverview();
+  const host = e.target.closest('[data-host]');
+  if (host) { hideOverview(); setHostFilter(host.dataset.host); return; }   // "where you read" → narrow the shelf
+  const heavy = e.target.closest('[data-url]');
+  if (heavy) openArticle(heavy.dataset.url);
+});
+$('#overview').addEventListener('keydown', (e) => {   // the rows are click-only divs → make them keyboard-operable
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const row = e.target.closest('[data-host],[data-url]');
+  if (row) { e.preventDefault(); row.click(); }
+});
+
 // ── Host filter — narrow the shelf to one site (chips over the list) ──────────
 function visibleLib() { return hostFilter ? LIB.filter((p) => (p.host || 'web') === hostFilter) : LIB; }
 function renderHostbar() {
@@ -312,11 +428,14 @@ function renderHostbar() {
   el.innerHTML = `<button class="host-chip${!hostFilter ? ' active' : ''}" data-host="">all <b>${LIB.length}</b></button>` +
     hosts.map((h) => `<button class="host-chip${hostFilter === h ? ' active' : ''}" data-host="${esc(h)}" title="${esc(h)}">${esc(h)} <b>${counts[h]}</b></button>`).join('');
 }
-$('#hostbar').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-host]'); if (!b) return;
-  hostFilter = b.dataset.host || null;
+function setHostFilter(host) {
+  hostFilter = host || null;
   $('#q').value = '';                 // picking a host resets the search
   renderHostbar(); renderList(visibleLib());
+}
+$('#hostbar').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-host]'); if (!b) return;
+  setHostFilter(b.dataset.host);
 });
 
 // ── List / search results ────────────────────────────────────────────────────
@@ -366,6 +485,7 @@ $('#q').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.target.
 // ── Open an article ──────────────────────────────────────────────────────────
 async function openArticle(url) {
   activeUrl = url;
+  $('#overview').hidden = true;        // the overview and an article share the reader pane
   document.querySelectorAll('.card').forEach((c) => c.classList.toggle('active', c.dataset.url === url));
   const [p, rel] = await Promise.all([
     api('/api/page?url=' + encodeURIComponent(url)),

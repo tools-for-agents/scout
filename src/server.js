@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname, normalize } from 'node:path';
-import { library, search, page, related, stats } from './core.js';
+import { library, search, page, related, stats, overview } from './core.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dir, '..', 'public');
@@ -22,6 +22,7 @@ function json(res, code, body) {
 const api = {
   '/api/stats': () => stats(),
   '/api/library': () => library({ k: 2000 }),
+  '/api/overview': (q) => overview({ top: q.top ? +q.top : 8 }),
   '/api/search': (q) => search(q.q || '', { k: q.k ? +q.k : 20, max_tokens: q.tokens ? +q.tokens : 4000 }),
   '/api/page': (q) => {
     const p = q.url && page(q.url);

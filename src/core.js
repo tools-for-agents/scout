@@ -162,3 +162,44 @@ export function stats() {
     last_fetched: get('SELECT MAX(fetched_at) m FROM pages').m,
   };
 }
+
+// What the reading history adds up to. The headline is in TOKENS, not bytes:
+// scout's whole point is that an agent pays for raw HTML by the token, and the
+// markdown it keeps costs a fraction of it. Bytes/4 is the same estimate the rest
+// of the toolkit budgets with.
+const tok = (bytes) => Math.ceil((bytes || 0) / 4);
+export function overview({ top = 8 } = {}) {
+  // coerce at the core (?top=abc arrives as NaN → slice(0,NaN) would empty every list)
+  top = Number.isFinite(+top) && +top > 0 ? Math.min(Math.floor(+top), 100) : 8;
+  const pages = all(`SELECT url, final_url, title, html_bytes, md_bytes, fetched_at FROM pages`);
+  const html_tokens = pages.reduce((a, p) => a + tok(p.html_bytes), 0);
+  const md_tokens = pages.reduce((a, p) => a + tok(p.md_bytes), 0);
+  const saved_tokens = Math.max(0, html_tokens - md_tokens);
+
+  const hosts = {};
+  for (const p of pages) {
+    const h = hostOf(p.final_url || p.url) || 'web';
+    (hosts[h] ||= { host: h, pages: 0, tokens: 0 });
+    hosts[h].pages++; hosts[h].tokens += tok(p.md_bytes);
+  }
+  const by_host = Object.values(hosts).sort((a, b) => b.pages - a.pages || b.tokens - a.tokens).slice(0, top);
+
+  const days = {};
+  for (const p of pages) {
+    const d = (p.fetched_at || '').slice(0, 10);
+    if (d) days[d] = (days[d] || 0) + 1;
+  }
+  const by_day = Object.entries(days).sort(([a], [b]) => a < b ? -1 : 1).map(([day, n]) => ({ day, pages: n }));
+
+  const heaviest = pages
+    .map((p) => ({ url: p.url, title: p.title || p.url, host: hostOf(p.final_url || p.url) || 'web',
+      tokens: tok(p.md_bytes), html_tokens: tok(p.html_bytes) }))
+    .sort((a, b) => b.html_tokens - a.html_tokens).slice(0, top);
+
+  return {
+    pages: pages.length,
+    html_tokens, md_tokens, saved_tokens,
+    saved_pct: html_tokens ? Math.round(saved_tokens / html_tokens * 100) : 0,
+    by_host, by_day, heaviest,
+  };
+}

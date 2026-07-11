@@ -56,6 +56,13 @@ const tools = [
     inputSchema: { type: 'object', properties: {} },
     run: () => scout.stats(),
   },
+  {
+    name: 'scout_overview',
+    description: 'A digest of everything scout has read: how many tokens the raw HTML would have cost vs the clean markdown kept '
+      + '(and the tokens saved), the top hosts read from, reading volume per day, and the heaviest pages.',
+    inputSchema: { type: 'object', properties: { top: { type: 'number', description: 'How many hosts / heaviest pages to return (default 8)' } } },
+    run: (a) => scout.overview({ top: a.top }),
+  },
 ];
 
 const toolMap = Object.fromEntries(tools.map((t) => [t.name, t]));
