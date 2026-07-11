@@ -171,6 +171,11 @@
   .copy-md { margin-left:auto; font-family:var(--mono); font-size:11px; background:var(--surface-2); border:1px solid var(--line); color:var(--muted); border-radius:20px; padding:3px 11px; cursor:pointer; transition:color .12s, border-color .12s; }
   .copy-md:hover { color:var(--accent); border-color:var(--accent); }
   .copy-md.ok { color:#5aa15f; border-color:#5aa15f; }
+  /* capture wears cortex's violet, not scout's amber: it is the brain's action */
+  .to-brain { font-family:var(--mono); font-size:11px; background:rgba(167,139,250,.1); border:1px solid rgba(167,139,250,.4);
+    color:#8b5cf6; border-radius:20px; padding:3px 11px; cursor:pointer; transition:background .12s, border-color .12s; }
+  .to-brain:hover, .to-brain.done { background:rgba(167,139,250,.2); border-color:#8b5cf6; }
+  .to-brain:disabled { opacity:.65; cursor:default; }
 
   /* article body — serif, comfortable measure */
   .article { font-family:var(--serif); font-size:18px; line-height:1.72; color:var(--ink-soft); }
@@ -273,7 +278,7 @@ const $ = (s) => document.querySelector(s);
 const api = (p) => fetch(p).then((r) => r.json());
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 
-let LIB = [], activeUrl = null, activeMarkdown = '', hostFilter = null;
+let LIB = [], STATS = null, activeUrl = null, activeMarkdown = '', hostFilter = null;
 
 // ── Recent reads (client-side, localStorage) ─────────────────────────────────
 const RKEY = 'scout:recent', RCAP = 8;
@@ -323,6 +328,7 @@ $('#theme').addEventListener('click', () => {
 // ── Boot ─────────────────────────────────────────────────────────────────────
 (async () => {
   const [stats, lib] = await Promise.all([api('/api/stats'), api('/api/library')]);
+  STATS = stats;                      // carries the cortex url the capture button POSTs to
   LIB = lib.pages;
   renderStats(stats); renderHostbar(); renderList(visibleLib()); renderRecent();
   // deep-link: #<encoded url>
@@ -508,6 +514,7 @@ async function openArticle(url) {
       <span class="dot">·</span><span>${mins} min</span>
       <span class="chip">~${fmtTok(p.tokens)} tok</span>
       <button class="copy-md" data-copymd title="Copy the clean markdown to your clipboard" aria-label="Copy article as markdown">⧉ copy markdown</button>
+      <button class="to-brain" data-capture title="Keep this article in cortex, your second brain" aria-label="Send this article to cortex">🧠 → cortex</button>
     </div>
     <div class="article">${renderMarkdown(p.markdown)}</div>
     ${relatedSection(rel)}`;
@@ -544,8 +551,43 @@ function relatedSection(rel) {
 }
 $('#reader').addEventListener('click', (e) => {
   const b = e.target.closest('[data-copymd]'); if (b) { copyMarkdown(b); return; }
+  const cap = e.target.closest('[data-capture]'); if (cap) { captureToCortex(cap); return; }
   const rel = e.target.closest('[data-rel]'); if (rel) openArticle(rel.dataset.rel);
 });
+
+// ── Send the article to cortex — the last of the toolkit's capture edges ─────
+// This is the original `scout fetch | cortex capture` loop the toolkit was
+// designed around, finally one click: read the web, keep what matters.
+// scout never writes — the browser POSTs to cortex's own /api/capture.
+async function captureToCortex(btn) {
+  if (!activeUrl || !activeMarkdown || !STATS || !STATS.cortex) return;
+  const page = LIB.find((p) => p.url === activeUrl) || {};
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = '🧠 saving…';
+  try {
+    // An article's canonical source is the page itself, not scout's copy of it —
+    // so the note cites the web, and links to the cached read alongside it.
+    const origin = page.final_url || activeUrl;
+    const cached = location.origin + '/#' + encodeURIComponent(activeUrl);
+    // fmtDate is relative ("today" / "yesterday"), so no preposition — "on today" reads wrong
+    const text = `*Read via [scout](${cached})${page.fetched_at ? ' · ' + fmtDate(page.fetched_at) : ''}*\n\n${activeMarkdown}`;
+
+    const res = await fetch(`${STATS.cortex}/api/capture`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, title: page.title || activeUrl, source: origin }),
+    });
+    if (!res.ok) throw new Error('cortex refused');
+    const r = await res.json();
+    btn.classList.add('done');
+    btn.textContent = r.action === 'updated' ? '🧠 ✓ appended' : '🧠 ✓ in cortex';
+    btn.title = `Saved to cortex as "${r.slug}"`;
+    setTimeout(() => { btn.disabled = false; btn.classList.remove('done'); btn.textContent = label; }, 2600);
+  } catch {
+    btn.textContent = '🧠 cortex offline';
+    btn.title = 'Start cortex serve (port 7800) to keep articles in your brain';
+    setTimeout(() => { btn.disabled = false; btn.textContent = label; }, 2600);
+  }
+}
 
 // ── In-article table of contents ─────────────────────────────────────────────
 let tocHeadings = [];

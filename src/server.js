@@ -19,8 +19,13 @@ function json(res, code, body) {
 }
 
 // Endpoints only read the cache; /api/page returns 404 for anything not read yet.
+// Where cortex's web view lives, so an article can be kept in the brain.
+// scout never writes to it — the browser POSTs to cortex's own /api/capture.
+// This is the original `scout fetch | cortex capture` loop, in one click.
+const CORTEX_URL = (process.env.SCOUT_CORTEX_URL || 'http://localhost:7800').replace(/\/$/, '');
+
 const api = {
-  '/api/stats': () => stats(),
+  '/api/stats': () => ({ ...stats(), cortex: CORTEX_URL }),
   '/api/library': () => library({ k: 2000 }),
   '/api/overview': (q) => overview({ top: q.top ? +q.top : 8 }),
   '/api/search': (q) => search(q.q || '', { k: q.k ? +q.k : 20, max_tokens: q.tokens ? +q.tokens : 4000 }),

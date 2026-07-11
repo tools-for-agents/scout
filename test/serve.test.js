@@ -116,3 +116,15 @@ test('overview: the reading history adds up — tokens saved, hosts, days, heavi
     assert.equal(res.saved_tokens, o.saved_tokens, '/api/overview serves the same digest');
   } finally { server.close(); }
 });
+
+test('serve: stats advertises where cortex lives, so an article can be kept in the brain', async () => {
+  const server = createScoutServer();
+  await new Promise((r) => server.listen(0, r));
+  const base = `http://localhost:${server.address().port}`;
+  try {
+    const s = await fetch(base + '/api/stats').then((r) => r.json());
+    // scout never writes to cortex — it only tells the page which brain to POST to
+    assert.equal(s.cortex, 'http://localhost:7800', 'defaults to cortex serve');
+    assert.ok(s.pages > 0, 'and still carries the cache stats');
+  } finally { server.close(); }
+});
