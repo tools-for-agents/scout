@@ -160,3 +160,46 @@ test('serve: POST /api/fetch reads a page into the library; a GET never can', as
     assert.ok(lib.pages.some((x) => x.url === 'https://example.com/reconnect'));
   } finally { server.close(); }
 });
+
+test('links: where a cached page points — from the cache, marking what you have read', async () => {
+  const { pageLinks } = await import('../src/core.js');
+
+  save({ url: 'https://hub.example.com/index', title: 'The hub',
+    markdown: [
+      'A page that points at things.',
+      '',
+      'Already read: [the reconnect piece](https://example.com/reconnect).',
+      'Not yet: [an unread essay](https://elsewhere.example.org/essay).',
+      'Again the same: [the reconnect piece](https://example.com/reconnect).',   // dedupe
+      'Itself: [home](https://hub.example.com/index).',                          // not a lead
+      'Not a page: [mail](mailto:a@b.c) and [rel](/relative/path).',             // only real web links
+    ].join('\n'),
+    html_bytes: 9000 });
+
+  const l = pageLinks('https://hub.example.com/index');
+  assert.equal(l.count, 2, 'deduped, self-links and non-http links dropped');
+
+  const byHref = Object.fromEntries(l.links.map((x) => [x.href, x]));
+  const read = byHref['https://example.com/reconnect'];
+  assert.ok(read, 'the link it points at is there');
+  assert.equal(read.in_library, true, 'and scout knows you already read it');
+  assert.equal(read.title, 'WebSocket reconnect backoff', 'showing what it actually is, not the anchor text');
+  assert.equal(read.host, 'example.com');
+
+  const fresh = byHref['https://elsewhere.example.org/essay'];
+  assert.equal(fresh.in_library, false, 'the unread one is marked unread');
+  assert.equal(fresh.text, 'an unread essay', 'falling back to its anchor text');
+
+  // cache-only: it never reaches the network to answer this
+  assert.equal(pageLinks('https://never.fetched.example/x'), null);
+
+  const server = createScoutServer();
+  await new Promise((r) => server.listen(0, r));
+  const base = `http://localhost:${server.address().port}`;
+  try {
+    const res = await fetch(base + '/api/links?url=' + encodeURIComponent('https://hub.example.com/index')).then((r) => r.json());
+    assert.equal(res.count, 2);
+    const miss = await fetch(base + '/api/links?url=https://never.fetched.example/x');
+    assert.equal(miss.status, 404, 'a page you have not read has no links to show');
+  } finally { server.close(); }
+});

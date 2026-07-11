@@ -141,6 +141,36 @@ export async function links(url, { limit = 100 } = {}) {
   return { url, final_url: r.finalUrl, count: found.length, links: found };
 }
 
+// Where a page you've already read points — answered from the CACHE, no network
+// trip: the clean markdown scout kept still carries the page's links. Each one says
+// whether it is already in your library, so the reading room can show you the edge
+// of what you've read and let you step over it.
+export function pageLinks(url, { limit = 60 } = {}) {
+  limit = Number.isFinite(+limit) && +limit > 0 ? Math.min(Math.floor(+limit), 500) : 60;
+  url = normUrl(url);
+  const row = get('SELECT url, final_url, markdown FROM pages WHERE url=?', url);
+  if (!row) return null;                                  // cache-only, like page()
+
+  const seen = new Set(), out = [];
+  const re = /\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
+  const self = new Set([row.url, row.final_url].filter(Boolean));
+  let m;
+  while ((m = re.exec(row.markdown || '')) && out.length < limit) {
+    const href = m[2].replace(/[.,;:]+$/, '');            // trailing punctuation isn't part of a url
+    if (seen.has(href) || self.has(href)) continue;       // a page pointing at itself is not a lead
+    seen.add(href);
+    const cached = get('SELECT title FROM pages WHERE url=? OR final_url=?', href, href);
+    out.push({
+      href,
+      text: (m[1] || '').replace(/\*\*/g, '').trim() || hostOf(href),
+      host: hostOf(href),
+      in_library: !!cached,                               // already read → open it; not → one click to read it
+      title: cached ? cached.title : null,
+    });
+  }
+  return { url: row.url, count: out.length, links: out };
+}
+
 export function list({ k = 25 } = {}) {
   return { pages: all(`SELECT url, title, md_bytes, fetched_at FROM pages ORDER BY fetched_at DESC LIMIT ?`, k) };
 }
