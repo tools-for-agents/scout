@@ -128,3 +128,35 @@ test('serve: stats advertises where cortex lives, so an article can be kept in t
     assert.ok(s.pages > 0, 'and still carries the cache stats');
   } finally { server.close(); }
 });
+
+test('serve: POST /api/fetch reads a page into the library; a GET never can', async () => {
+  const server = createScoutServer();
+  await new Promise((r) => server.listen(0, r));
+  const base = `http://localhost:${server.address().port}`;
+  const post = (body) => fetch(base + '/api/fetch', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  try {
+    // fetching reaches the network and writes the cache — a GET must never do that
+    assert.equal((await fetch(base + '/api/fetch')).status, 405);
+    const pre = await fetch(base + '/api/fetch', { method: 'OPTIONS' });
+    assert.match(pre.headers.get('access-control-allow-methods'), /POST/);
+
+    // guards, before anything touches the network
+    assert.equal((await post({})).status, 400, 'a url is required');
+    const bad = await post({ url: 'file:///etc/passwd' });
+    assert.equal(bad.status, 400, 'only the web can be read');
+    assert.match((await bad.json()).error, /http/);
+
+    // the happy path, without hitting the network: an already-cached page comes
+    // back from the read-through cache (this is the same page the harness seeded)
+    const p = await post({ url: 'https://example.com/reconnect' }).then((r) => r.json());
+    assert.equal(p.title, 'WebSocket reconnect backoff');
+    assert.equal(p.from_cache, true, 'served from the cache, not re-fetched');
+    assert.ok(p.markdown.includes('exponential backoff'));
+
+    // and it is really in the library the shelf renders
+    const lib = await fetch(base + '/api/library').then((r) => r.json());
+    assert.ok(lib.pages.some((x) => x.url === 'https://example.com/reconnect'));
+  } finally { server.close(); }
+});

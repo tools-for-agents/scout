@@ -44,6 +44,7 @@ scout serve                                                # → http://localhos
 
 A calm, zero-dependency web view of everything scout has read — the same cache the agent recalls from:
 
+- **Read a page from here** — paste a url into the reading room and scout fetches it, strips it to clean markdown, caches it, and opens it. Until now the web view could only ever show what the CLI or an agent had already fetched — it could read your library but never add to it. It writes to the same read-through cache the agent uses, so anything you read here is instantly searchable and instantly recallable by [`recall`](https://github.com/tools-for-agents/recall). Fetching is a `POST` (it reaches the network *and* writes), and only `http(s)` urls are accepted.
 - **The shelf** — every cached page as a card (title, source, when it was read, `~token` size), newest first.
 - **Filter by host** — chips above the shelf (each with a count) narrow the list to one site in a click — read everything you've kept from `en.wikipedia.org`, or just your own docs — and clear back to all.
 - **Recent reads** — the articles you've opened surface as clickable chips above the shelf (remembered in the browser only, most-recent first); jump back to one in a click, or **clear ✕** to forget them.

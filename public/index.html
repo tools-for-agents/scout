@@ -90,7 +90,23 @@
   .shelf-stats div b { display:block; font-size:16px; font-variant-numeric:tabular-nums; }
   .shelf-stats div span { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px; }
 
-  .searchbar { padding:12px 14px; border-bottom:1px solid var(--line); }
+  /* the one thing in the reading room that reaches the web */
+  .fetchbar { padding:0 14px 12px; }
+  .fetchbar .fld { display:flex; align-items:center; gap:9px; background:var(--bg); border:1px solid var(--line);
+    border-radius:9px; padding:0 6px 0 11px; height:34px; transition:border-color .15s; }
+  .fetchbar .fld:focus-within { border-color:var(--accent); }
+  .fetchbar .ic { color:var(--accent); font-size:13px; }
+  .fetchbar input { flex:1; min-width:0; background:none; border:none; outline:none; color:var(--ink);
+    font-size:12.5px; font-family:var(--mono); }
+  .fetchbar input::placeholder { color:var(--faint); font-family:var(--sans); }
+  .fetchbar button { flex:none; font-family:var(--mono); font-size:10.5px; color:var(--accent);
+    background:var(--accent-soft); border:1px solid transparent; border-radius:7px; padding:4px 9px; cursor:pointer; }
+  .fetchbar button:hover { border-color:var(--accent); }
+  .fetchbar button:disabled { opacity:.6; cursor:default; }
+  .fetch-msg { margin-top:6px; font-family:var(--mono); font-size:10.5px; color:var(--muted); }
+  .fetch-msg[hidden] { display:none; }
+  .fetch-msg.err { color:#c8553d; }
+  .searchbar { padding:12px 14px 8px; border-bottom:none; }
   .searchbar .fld { display:flex; align-items:center; gap:9px; background:var(--bg); border:1px solid var(--line);
     border-radius:9px; padding:0 11px; height:36px; transition:border-color .15s; }
   .searchbar .fld:focus-within { border-color:var(--accent); }
@@ -254,6 +270,13 @@
     </div>
     <div class="searchbar">
       <div class="fld"><span class="ic">⌕</span><input id="q" placeholder="search everything you've read…" autocomplete="off" spellcheck="false" /></div>
+    </div>
+    <div class="fetchbar">
+      <div class="fld"><span class="ic">☞</span>
+        <input id="url" placeholder="read a page — paste a url…" autocomplete="off" spellcheck="false" aria-label="Read a page from the web" />
+        <button id="go" title="Fetch and read this page" aria-label="Fetch and read this page">read ↵</button>
+      </div>
+      <div class="fetch-msg" id="fetchMsg" hidden></div>
     </div>
     <div class="recent" id="recent" hidden></div>
     <div class="hostbar" id="hostbar" hidden></div>
@@ -554,6 +577,39 @@ $('#reader').addEventListener('click', (e) => {
   const cap = e.target.closest('[data-capture]'); if (cap) { captureToCortex(cap); return; }
   const rel = e.target.closest('[data-rel]'); if (rel) openArticle(rel.dataset.rel);
 });
+
+// ── Read a page into the library ────────────────────────────────────────────
+// The reading room could only ever show what the CLI or an agent had already
+// fetched. Now it can bring something in itself: paste a url, and scout fetches
+// it, strips it to clean markdown, caches it, and opens it — the same read-through
+// cache the agent uses, so anything you read here is instantly recallable.
+async function fetchPage() {
+  const input = $('#url'), btn = $('#go'), msg = $('#fetchMsg');
+  const target = input.value.trim();
+  if (!target) return;
+  btn.disabled = true; btn.textContent = 'reading…';
+  msg.hidden = false; msg.classList.remove('err');
+  msg.textContent = 'fetching ' + target.replace(/^https?:\/\//, '') + '…';
+  try {
+    const res = await fetch('/api/fetch', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: target }) });
+    const p = await res.json();
+    if (!res.ok || p.error) throw new Error(p.error || 'could not read that page');
+
+    const [stats, lib] = await Promise.all([api('/api/stats'), api('/api/library')]);
+    STATS = stats; LIB = lib.pages;
+    renderStats(stats); renderHostbar(); renderList(visibleLib()); renderRecent();
+    msg.textContent = p.from_cache ? 'already in your library — opening it' : `read · ~${fmtTok(p.tokens)} tok of clean markdown`;
+    input.value = '';
+    openArticle(p.url);
+    setTimeout(() => { msg.hidden = true; }, 3000);
+  } catch (e) {
+    msg.classList.add('err');
+    msg.textContent = `couldn't read that page — ${String(e.message || e)}`;
+  } finally { btn.disabled = false; btn.textContent = 'read ↵'; }
+}
+$('#go').addEventListener('click', fetchPage);
+$('#url').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); fetchPage(); } });
 
 // ── Send the article to cortex — the last of the toolkit's capture edges ─────
 // This is the original `scout fetch | cortex capture` loop the toolkit was
