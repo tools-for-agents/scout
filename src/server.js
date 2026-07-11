@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname, normalize } from 'node:path';
-import { library, search, page, related, stats, overview, fetchUrl, pageLinks } from './core.js';
+import { library, search, page, related, stats, overview, fetchUrl, pageLinks, reread, forget } from './core.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dir, '..', 'public');
@@ -79,13 +79,37 @@ export function createScoutServer() {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (req.method === 'OPTIONS') {
       res.writeHead(204, { 'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
+        'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
       return res.end();
     }
 
     // Read a page into the library. The rest of this server is read-only over the
     // cache; this is the one thing that reaches the network and writes — so it is a
     // POST. A GET must never be able to make the server fetch a URL for you.
+    // Re-read a page you already have: hits the network AND rewrites the cache, so
+    // it is a POST. Says whether the page actually changed since you read it.
+    if (url.pathname === '/api/reread') {
+      if (req.method !== 'POST') return json(res, 405, { error: 'use POST' });
+      try {
+        const body = await readBody(req);
+        const target = String(body.url || '').trim();
+        if (!target) return json(res, 400, { error: 'url is required' });
+        const r = await reread(target);
+        if (!r) return json(res, 404, { error: 'not in cache — you have not read this page' });
+        return json(res, 200, r);
+      } catch (e) { return json(res, 502, { error: String(e.message || e) }); }
+    }
+
+    // Drop a page from the library. Destructive, so DELETE — a GET must never
+    // forget something for you.
+    if (url.pathname === '/api/page' && req.method === 'DELETE') {
+      const target = String(url.searchParams.get('url') || '').trim();
+      if (!target) return json(res, 400, { error: 'url is required' });
+      const r = forget(target);
+      if (!r.forgotten) return json(res, 404, { error: 'not in cache' });
+      return json(res, 200, r);
+    }
+
     if (url.pathname === '/api/fetch') {
       if (req.method !== 'POST') return json(res, 405, { error: 'use POST' });
       try {

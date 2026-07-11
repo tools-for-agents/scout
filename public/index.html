@@ -210,6 +210,17 @@
     color:#8b5cf6; border-radius:20px; padding:3px 11px; cursor:pointer; transition:background .12s, border-color .12s; }
   .to-brain:hover, .to-brain.done { background:rgba(167,139,250,.2); border-color:#8b5cf6; }
   .to-brain:disabled { opacity:.65; cursor:default; }
+  /* a cache you cannot refresh is a fossil */
+  .re-read, .forget { font-family:var(--mono); font-size:11px; background:var(--surface-2); border:1px solid var(--line);
+    color:var(--muted); border-radius:20px; padding:3px 11px; cursor:pointer; transition:color .12s, border-color .12s; }
+  .re-read:hover { color:var(--accent); border-color:var(--accent); }
+  .forget:hover, .forget.armed { color:#c8553d; border-color:#c8553d; }
+  .re-read:disabled, .forget:disabled { opacity:.6; cursor:default; }
+  .reread-note { margin-top:12px; padding:9px 13px; border-radius:10px; font-size:12.5px; line-height:1.5;
+    border:1px solid var(--line); background:var(--surface-2); color:var(--ink-soft); }
+  .reread-note.changed { border-color:color-mix(in srgb, var(--accent) 45%, transparent);
+    background:color-mix(in srgb, var(--accent) 10%, transparent); }
+  .reread-note b { color:var(--accent); }
 
   /* article body — serif, comfortable measure */
   .article { font-family:var(--serif); font-size:18px; line-height:1.72; color:var(--ink-soft); }
@@ -556,6 +567,8 @@ async function openArticle(url) {
       <span class="chip">~${fmtTok(p.tokens)} tok</span>
       <button class="copy-md" data-copymd title="Copy the clean markdown to your clipboard" aria-label="Copy article as markdown">⧉ copy markdown</button>
       <button class="to-brain" data-capture title="Keep this article in cortex, your second brain" aria-label="Send this article to cortex">🧠 → cortex</button>
+      <button class="re-read" data-reread title="Read it again from the web — has it changed since you read it?" aria-label="Re-read this page">↻ re-read</button>
+      <button class="forget" data-forget title="Drop this page from your library" aria-label="Forget this page">✕ forget</button>
     </div>
     <div class="article">${renderMarkdown(p.markdown)}</div>
     <div id="linksOut"></div>
@@ -641,6 +654,8 @@ function relatedSection(rel) {
 }
 $('#reader').addEventListener('click', (e) => {
   const b = e.target.closest('[data-copymd]'); if (b) { copyMarkdown(b); return; }
+  const rr = e.target.closest('[data-reread]'); if (rr) { rereadPage(rr); return; }
+  const fg = e.target.closest('[data-forget]'); if (fg) { forgetPage(fg); return; }
   const cap = e.target.closest('[data-capture]'); if (cap) { captureToCortex(cap); return; }
   const rel = e.target.closest('[data-rel]'); if (rel) openArticle(rel.dataset.rel);
 });
@@ -677,6 +692,69 @@ async function fetchPage() {
 }
 $('#go').addEventListener('click', fetchPage);
 $('#url').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); fetchPage(); } });
+
+// ── Re-read / forget: the lifecycle the reading room never had ──────────────
+// scout's value is a cache — but a cache you cannot refresh is a fossil. `fresh`
+// has always existed on fetchUrl and the UI never set it, so a page read a month
+// ago was the page you would read forever. And the answer that matters is not
+// "here it is again" but WHETHER IT CHANGED: a page that hasn't moved means the
+// notes you took from it are still good.
+async function rereadPage(btn) {
+  if (!activeUrl) return;
+  btn.disabled = true; btn.textContent = '↻ reading…';
+  try {
+    const res = await fetch('/api/reread', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: activeUrl }) });
+    const r = await res.json();
+    if (!res.ok || r.error) throw new Error(r.error || 'could not re-read that page');
+
+    const [stats, lib] = await Promise.all([api('/api/stats'), api('/api/library')]);
+    STATS = stats; LIB = lib.pages;
+    renderStats(stats); renderHostbar(); renderList(visibleLib());
+    await openArticle(r.url);                       // re-render with the fresh copy
+
+    const d = r.diff;
+    const note = document.createElement('div');
+    note.className = 'reread-note' + (d.changed ? ' changed' : '');
+    note.innerHTML = d.changed
+      ? `This page <b>changed</b> since you read it — <b>${d.added}</b> line${d.added === 1 ? '' : 's'} added, <b>${d.removed}</b> removed. What you took from it may be out of date.`
+      : `<b>Unchanged</b> since you read it${r.previously_read ? ` (${fmtDate(r.previously_read)})` : ''} — what you took from it still holds.`;
+    const by = document.querySelector('#reader .byline');
+    if (by) by.insertAdjacentElement('afterend', note);
+  } catch (e) {
+    btn.textContent = '↻ failed';
+    btn.title = String(e.message || e);
+    setTimeout(() => { btn.disabled = false; btn.textContent = '↻ re-read'; }, 2400);
+    return;
+  }
+}
+
+// Forgetting is irreversible, so it arms first and fires on the second click.
+let forgetArmed = false;
+async function forgetPage(btn) {
+  if (!activeUrl) return;
+  if (!forgetArmed) {
+    forgetArmed = true;
+    btn.classList.add('armed'); btn.textContent = '✕ forget?';
+    setTimeout(() => { if (forgetArmed) { forgetArmed = false; btn.classList.remove('armed'); btn.textContent = '✕ forget'; } }, 3000);
+    return;
+  }
+  forgetArmed = false;
+  btn.disabled = true; btn.textContent = '✕ forgetting…';
+  try {
+    const res = await fetch('/api/page?url=' + encodeURIComponent(activeUrl), { method: 'DELETE' });
+    if (!res.ok) throw new Error('could not forget that page');
+    const [stats, lib] = await Promise.all([api('/api/stats'), api('/api/library')]);
+    STATS = stats; LIB = lib.pages;
+    activeUrl = null; activeMarkdown = '';
+    renderStats(stats); renderHostbar(); renderList(visibleLib()); renderRecent();
+    $('#reader').hidden = true; $('#welcome').style.display = '';
+    document.body.classList.remove('reading');
+    history.replaceState(null, '', location.pathname);
+  } catch {
+    btn.disabled = false; btn.classList.remove('armed'); btn.textContent = '✕ forget';
+  }
+}
 
 // ── Send the article to cortex — the last of the toolkit's capture edges ─────
 // This is the original `scout fetch | cortex capture` loop the toolkit was

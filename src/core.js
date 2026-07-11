@@ -175,6 +175,33 @@ export function list({ k = 25 } = {}) {
   return { pages: all(`SELECT url, title, md_bytes, fetched_at FROM pages ORDER BY fetched_at DESC LIMIT ?`, k) };
 }
 
+// Re-read a page you already have. A cache is only worth trusting if you can ask
+// it again — otherwise what you read a month ago is what you will always read. And
+// the answer that matters is not "here it is again" but **did it change** since you
+// read it: a page that hasn't moved means your notes are still good.
+const mdLines = (s) => String(s || '').split('\n').map((l) => l.trim()).filter(Boolean);
+export function pageDiff(before, after) {
+  const a = mdLines(before), b = mdLines(after);
+  const setA = new Set(a), setB = new Set(b);
+  const added = b.filter((l) => !setA.has(l)).length;
+  const removed = a.filter((l) => !setB.has(l)).length;
+  return { changed: added > 0 || removed > 0, added, removed, was_lines: a.length, now_lines: b.length };
+}
+
+export async function reread(url, { timeout = 20000 } = {}) {
+  url = normUrl(url);
+  const prev = get('SELECT markdown, fetched_at, md_bytes FROM pages WHERE url=?', url);
+  if (!prev) return null;                                  // you cannot re-read what you never read
+  const fresh = await fetchUrl(url, { fresh: true, timeout, max_tokens: 0 });
+  const diff = pageDiff(prev.markdown, fresh.markdown);
+  return {
+    ...fresh,
+    previously_read: prev.fetched_at,
+    diff,
+    was_tokens: Math.ceil((prev.md_bytes || 0) / 4),
+  };
+}
+
 export function forget(url) {
   url = normUrl(url);
   const n = get('SELECT COUNT(*) n FROM pages WHERE url=?', url).n;

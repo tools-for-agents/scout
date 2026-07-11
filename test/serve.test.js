@@ -203,3 +203,61 @@ test('links: where a cached page points — from the cache, marking what you hav
     assert.equal(miss.status, 404, 'a page you have not read has no links to show');
   } finally { server.close(); }
 });
+
+test('re-read: the question is not "here it is again" but "did it change"', async () => {
+  const { pageDiff } = await import('../src/core.js');
+
+  // the diff is about meaning, not bytes: reformatting is not a change
+  const same = pageDiff('# Title\n\nA line.\n', '# Title\n\n   A line.   \n\n');
+  assert.equal(same.changed, false, 'whitespace and blank lines are not a change');
+
+  const moved = pageDiff('# Title\n\nOld claim.\n', '# Title\n\nNew claim.\nAnd more.\n');
+  assert.equal(moved.changed, true);
+  assert.equal(moved.added, 2, 'two lines are new');
+  assert.equal(moved.removed, 1, 'one is gone');
+
+  const server = createScoutServer();
+  await new Promise((r) => server.listen(0, r));
+  const base = `http://localhost:${server.address().port}`;
+  try {
+    // re-reading writes the cache and hits the network, so a GET must not do it
+    assert.equal((await fetch(base + '/api/reread')).status, 405);
+
+    // and you cannot re-read what you never read
+    const unknown = await fetch(base + '/api/reread', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://never.read.example/x' }),
+    });
+    assert.equal(unknown.status, 404);
+    assert.match((await unknown.json()).error, /not read this page/);
+  } finally { server.close(); }
+});
+
+test('forget: a page can be dropped from the library — and a GET can never do it', async () => {
+  const server = createScoutServer();
+  await new Promise((r) => server.listen(0, r));
+  const base = `http://localhost:${server.address().port}`;
+  try {
+    save({ url: 'https://doomed.example/page', title: 'Doomed', markdown: 'unicorn-doomed content here.', html_bytes: 900 });
+
+    assert.ok((await fetch(base + '/api/library').then((r) => r.json())).pages.some((p) => p.url === 'https://doomed.example/page'));
+    assert.ok((await fetch(base + '/api/search?q=unicorn-doomed').then((r) => r.json())).results.some((r) => r.url === 'https://doomed.example/page'));
+
+    // reading is not forgetting
+    assert.ok((await fetch(base + '/api/page?url=' + encodeURIComponent('https://doomed.example/page'))).ok);
+    assert.ok((await fetch(base + '/api/library').then((r) => r.json())).pages.some((p) => p.url === 'https://doomed.example/page'),
+      'a GET left it alone');
+
+    const gone = await fetch(base + '/api/page?url=' + encodeURIComponent('https://doomed.example/page'), { method: 'DELETE' });
+    assert.equal(gone.status, 200);
+    assert.equal((await gone.json()).forgotten, true);
+
+    // it is gone from the shelf AND from search — not just hidden
+    assert.ok(!(await fetch(base + '/api/library').then((r) => r.json())).pages.some((p) => p.url === 'https://doomed.example/page'));
+    assert.ok(!(await fetch(base + '/api/search?q=unicorn-doomed').then((r) => r.json())).results.some((r) => r.url === 'https://doomed.example/page'),
+      'forgotten means gone from the index too');
+
+    assert.equal((await fetch(base + '/api/page?url=' + encodeURIComponent('https://doomed.example/page'), { method: 'DELETE' })).status, 404,
+      'forgetting it twice is a 404, not a lie');
+  } finally { server.close(); }
+});
