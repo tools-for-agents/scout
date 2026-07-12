@@ -1,7 +1,7 @@
 // scout core — the agent's window to the web. Fetch a URL, extract clean
 // readable markdown, cache it (so re-reads cost nothing), and search everything
 // you've ever read. Token-budgeted, like lens/cortex — pointed at the web.
-import { db, get, all, run, DB_PATH } from './db.js';
+import { get, all, run, DB_PATH, storeExists } from './db.js';
 import { htmlToMarkdown, extractTitle, extractDescription, extractLinks } from './extract.js';
 
 const estTokens = (s) => Math.ceil((s || '').length / 4);
