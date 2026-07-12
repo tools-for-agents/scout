@@ -1,0 +1,27 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.tools-for-agents/scout",
+  "description": "The agent's web reader: a URL becomes clean, cached, searchable markdown (~90% smaller).",
+  "version": "0.1.0",
+  "websiteUrl": "https://tools-for-agents.github.io",
+  "repository": {
+    "url": "https://github.com/tools-for-agents/scout",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@tools-for-agents/scout",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}

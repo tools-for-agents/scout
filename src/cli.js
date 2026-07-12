@@ -46,6 +46,9 @@ try {
   } else if (cmd === 'serve') {
     const { serve } = await import('./server.js');
     serve({ port: +flag('--port', process.env.SCOUT_PORT || 7950) });
+  } else if (cmd === 'mcp') {
+    // stdio JSON-RPC. The server starts on import: `npx @tools-for-agents/scout mcp`
+    await import('../mcp/mcp-server.js');
   } else {
     out(`scout — the agent's web reader (fetch → clean markdown → cached → searchable)
 
