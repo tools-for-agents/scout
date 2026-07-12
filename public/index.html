@@ -111,7 +111,7 @@
   .ob-go.new { color:var(--accent); border-color:color-mix(in srgb, var(--accent) 40%, transparent);
     background:color-mix(in srgb, var(--accent) 10%, transparent); }
   .ob-go.new:hover { background:color-mix(in srgb, var(--accent) 22%, transparent); }
-  .ob-go:disabled { opacity:.6; cursor:default; }
+  .ob-go:disabled {  cursor:default; opacity:1 !important; color:var(--ink-soft) !important; background:var(--panel-2) !important; border-color:var(--line) !important; cursor:not-allowed;}
 
   /* the one thing in the reading room that reaches the web */
   .fetchbar { padding: 0 16px 12px; }
@@ -125,7 +125,7 @@
   .fetchbar button { flex:none; font-family:var(--mono); font-size:12px; color:var(--accent);
     background:var(--accent-soft); border:1px solid transparent; border-radius:8px; padding: 4px 8px; cursor:pointer; }
   .fetchbar button:hover { border-color:var(--accent); }
-  .fetchbar button:disabled { opacity:.6; cursor:default; }
+  .fetchbar button:disabled {  cursor:default; opacity:1 !important; color:var(--ink-soft) !important; background:var(--panel-2) !important; border-color:var(--line) !important; cursor:not-allowed;}
   .fetch-msg { margin-top: 8px; font-family:var(--mono); font-size:12px; color:var(--muted); }
   .fetch-msg[hidden] { display:none; }
   .fetch-msg.err { color:#c8553d; }
@@ -214,13 +214,13 @@
   .to-brain { font-family:var(--mono); font-size:12px; background:rgba(167,139,250,.1); border:1px solid rgba(167,139,250,.4);
     color:#8b5cf6; border-radius:12px; padding: 4px 12px; cursor:pointer; transition:background .12s, border-color .12s; }
   .to-brain:hover, .to-brain.done { background:rgba(167,139,250,.2); border-color:#8b5cf6; }
-  .to-brain:disabled { opacity:.65; cursor:default; }
+  .to-brain:disabled {  cursor:default; opacity:1 !important; color:var(--ink-soft) !important; background:var(--panel-2) !important; border-color:var(--line) !important; cursor:not-allowed;}
   /* a cache you cannot refresh is a fossil */
   .re-read, .forget { font-family:var(--mono); font-size:12px; background:var(--surface-2); border:1px solid var(--line);
     color:var(--muted); border-radius:12px; padding: 4px 12px; cursor:pointer; transition:color .12s, border-color .12s; }
   .re-read:hover { color:var(--accent); border-color:var(--accent); }
   .forget:hover, .forget.armed { color:#c8553d; border-color:#c8553d; }
-  .re-read:disabled, .forget:disabled { opacity:.6; cursor:default; }
+  .re-read:disabled, .forget:disabled {  cursor:default; opacity:1 !important; color:var(--ink-soft) !important; background:var(--panel-2) !important; border-color:var(--line) !important; cursor:not-allowed;}
   .reread-note { margin-top: 12px; padding: 8px 12px; border-radius:8px; font-size:12px; line-height:1.5;
     border:1px solid var(--line); background:var(--surface-2); color:var(--ink-soft); }
   .reread-note.changed { border-color:color-mix(in srgb, var(--accent) 45%, transparent);
