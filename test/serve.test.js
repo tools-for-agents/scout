@@ -303,3 +303,27 @@ test('a search and a delete no longer look the same to a client', async () => {
   assert.equal(fetched.annotations.destructiveHint, false, 'fetching is additive — it caches, it does not destroy');
   assert.equal(fetched.annotations.openWorldHint, true, 'and it goes to the network');
 });
+
+// ── "fetch failed" is not an error message ──────────────────────────────────────
+test('a fetch that fails says WHY, so an agent can do something about it', async () => {
+  const { fetchPage } = await import('../src/core.js').then((m) => ({ fetchPage: m.fetchPage || m.fetch || m.get }));
+  const { spawnSync } = await import('node:child_process');
+
+  // Node's own message, in full, is "fetch failed" — three words that name no cause,
+  // suggest no action, and cannot be told apart from a typo, a dead host, a DNS failure
+  // or no network at all. The agent's next move is a guess.
+  const dead = spawnSync('node', ['src/cli.js', 'fetch', 'http://127.0.0.1:9/nothing'], {
+    encoding: 'utf8', env: { ...process.env, SCOUT_DB: '/tmp/scout-errtest.db' },
+  });
+  const msg = dead.stdout + dead.stderr;
+  assert.match(msg, /could not fetch/i, 'it names the action that failed');
+  assert.match(msg, /127\.0\.0\.1:9/, 'and the URL it tried, so a typo is visible');
+  assert.doesNotMatch(msg, /^error: fetch failed$/m, 'and never just "fetch failed"');
+
+  const nohost = spawnSync('node', ['src/cli.js', 'fetch', 'http://no-such-host-xyz-9999.invalid/'], {
+    encoding: 'utf8', env: { ...process.env, SCOUT_DB: '/tmp/scout-errtest.db' },
+  });
+  const m2 = nohost.stdout + nohost.stderr;
+  assert.match(m2, /no such host|offline/i, 'a dead domain says so, instead of "fetch failed"');
+  assert.match(m2, /ENOTFOUND/, 'and keeps the code, for anyone who wants it');
+});

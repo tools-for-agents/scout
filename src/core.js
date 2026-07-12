@@ -9,11 +9,32 @@ const nowISO = () => new Date().toISOString();
 const normUrl = (u) => { let s = String(u || '').trim(); if (!/^https?:\/\//i.test(s)) s = 'https://' + s; return s; };
 
 async function httpGet(url, timeout) {
-  const res = await fetch(url, {
-    redirect: 'follow',
-    headers: { 'user-agent': 'scout/0.1 (+github.com/tools-for-agents)', accept: 'text/html,application/xhtml+xml,*/*' },
-    signal: AbortSignal.timeout(timeout),
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      redirect: 'follow',
+      headers: { 'user-agent': 'scout/0.1 (+github.com/tools-for-agents)', accept: 'text/html,application/xhtml+xml,*/*' },
+      signal: AbortSignal.timeout(timeout),
+    });
+  } catch (e) {
+    // `fetch failed`. That is the whole message Node gives you, and it is the whole
+    // message an agent used to get: three words that name no cause, suggest no action,
+    // and cannot be told apart from a typo, a dead host, a DNS failure, or no network at
+    // all. Its next move is to guess. An error an agent cannot act on is an error you
+    // have not finished writing — so say WHICH of those it was.
+    const code = e.cause?.code || e.code || '';
+    const why = {
+      ENOTFOUND: 'no such host — check the domain, or you may be offline',
+      EAI_AGAIN: 'DNS lookup failed — you may be offline',
+      ECONNREFUSED: 'the host refused the connection — nothing is listening there',
+      ECONNRESET: 'the host closed the connection',
+      CERT_HAS_EXPIRED: "the site's TLS certificate has expired",
+      UNABLE_TO_VERIFY_LEAF_SIGNATURE: "the site's TLS certificate could not be verified",
+    }[code] || (e.name === 'TimeoutError' || /abort/i.test(e.name)
+      ? `no response within ${timeout}ms`
+      : (e.cause?.message || e.message || 'the request failed'));
+    throw new Error(`could not fetch ${url} — ${why}${code ? ` (${code})` : ''}`);
+  }
   return { status: res.status, finalUrl: res.url || url, contentType: res.headers.get('content-type') || '', text: await res.text() };
 }
 
