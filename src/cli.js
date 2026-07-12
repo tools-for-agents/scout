@@ -32,7 +32,9 @@ try {
   } else if (cmd === 'search') {
     const r = await scout.search(arg() || '', { k: +flag('-k', 8), max_tokens: +flag('--tokens', 1800) });
     for (const x of r.results) out(`\n▸ ${x.title}  score=${x.score}\n  ${x.url}\n  ${x.excerpt}`);
-    out(`\n— ${r.count} hits across your reading, ~${r.tokens} tokens —`);
+    const hay = r.searched ? ` of ${r.searched.pages} page${r.searched.pages === 1 ? '' : 's'} read` : '';
+    out(`\n— ${r.count} hits${hay}, ~${r.tokens} tokens —`);
+    if (r.searched && r.searched.pages === 0) out(`  you have not read anything yet: ${r.searched.cache}`);
   } else if (cmd === 'links') {
     const r = await scout.links(arg(), { limit: +flag('--limit', 100) });
     out(`${r.count} links from ${r.final_url}\n`);
