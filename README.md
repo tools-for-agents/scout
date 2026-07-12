@@ -98,3 +98,24 @@ Try the demo without a network fetch: `node scripts/seed.js` then `scout serve`.
 - **Extraction** is regex-based readability-lite: strip `<script>/<style>/<nav>/<footer>/…`, pick the densest `<article>`/`<main>`/`<body>` region, convert headings, links (resolved to absolute), **content images** (`<img>`/`<figure>` → markdown, tracking pixels dropped), code, lists, bold/italic, and decode HTML entities. Not a full DOM parse — but it reliably turns an article into readable prose at a fraction of the tokens.
 - **Cache** is a `node:sqlite` table keyed by URL; the same URL returns instantly unless `fresh`. An FTS5 mirror makes the whole history searchable by **bm25**, filled to a token budget (≈4 chars/token) — the same discipline as [`lens`](../lens) and [`cortex`](../cortex).
 - Non-HTML responses (JSON, plain text) are stored verbatim.
+
+## The agent toolkit
+
+`scout` is the **read the web** leg of **[tools-for-agents](https://tools-for-agents.github.io)** — an operating system for agents.
+Seven zero-dependency, MCP-native tools that form one loop:
+
+| | | |
+|---|---|---|
+| 🛰️ | [agent-hq](https://github.com/tools-for-agents/agent-hq) | coordinate — shared memory, a kanban agents claim work from, a registry, a cost ledger |
+| 🔎 | [lens](https://github.com/tools-for-agents/lens) | read code — token-budgeted retrieval — search, outlines, surgical reads |
+| ⚒ | [anvil](https://github.com/tools-for-agents/anvil) | run safely — a throwaway Docker sandbox: network off, capped, timed |
+| 🧠 | [cortex](https://github.com/tools-for-agents/cortex) | remember — an Obsidian-compatible second brain, wikilinked |
+| 🧭 | **scout** | **read the web** — a URL becomes clean, cached, searchable markdown |
+| 🎯 | [recall](https://github.com/tools-for-agents/recall) | recall it all — one query across brain, team, reading and code |
+| 👁 | [iris](https://github.com/tools-for-agents/iris) | see — look at what you built, before you claim it works |
+
+**Reading this as an agent?** [`/llms.txt`](https://tools-for-agents.github.io/llms.txt) is the map, and
+[`/tools.json`](https://tools-for-agents.github.io/tools.json) hands you all **67 MCP tools** — every name, every
+description, every install command — in **one fetch**, without cloning anything.
+
+MIT licensed.
