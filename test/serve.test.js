@@ -380,3 +380,33 @@ test('nothing the MCP server can reach is allowed to print to stdout', async () 
   assert.deepEqual(offenders, [],
     'stdout is the protocol — one stray print desyncs every agent session:\n  ' + offenders.join('\n  '));
 });
+
+// ── The state my machine never enters ───────────────────────────────────────────
+test('a brand-new user, with no cache at all, can still run every read command', async (t) => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join, resolve } = await import('node:path');
+  const { spawnSync } = await import('node:child_process');
+
+  // A read no longer CREATES the store — that fix stopped the tools littering every
+  // directory they were asked a question in. Which means `get()` returns undefined when
+  // there is no store, and `.n` on undefined is a TypeError.
+  //
+  // So `scout serve` CRASHED AT STARTUP on a machine with no cache: stats() runs before the
+  // server listens. A brand-new user's very first command died — and nothing caught it,
+  // because the tests seed, the CI gate seeds, and my own machine has had a cache for weeks.
+  // The bug lived in a state nothing here ever entered, and I put it there myself while
+  // fixing something else.
+  const dir = mkdtempSync(join(tmpdir(), 'scout-firstrun-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const cli = resolve(import.meta.dirname, '..', 'src', 'cli.js');
+  const env = { ...process.env, SCOUT_DB: join(dir, 'cache.db') };
+
+  for (const args of [['stats'], ['list'], ['search', 'anything'], ['overview']]) {
+    const r = spawnSync('node', [cli, ...args], { encoding: 'utf8', env });
+    const said = r.stdout + r.stderr;
+    assert.doesNotMatch(said, /TypeError|Cannot read properties/,
+      `\`scout ${args.join(' ')}\` on an empty cache must not crash — that is a new user's first command; got: ${said.slice(0, 120)}`);
+    assert.equal(r.status, 0, `\`scout ${args.join(' ')}\` exits cleanly with nothing cached`);
+  }
+});

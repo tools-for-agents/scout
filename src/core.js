@@ -136,7 +136,7 @@ function ftsQuery(q) {
 // So say what was searched. "0 of 0 notes" makes a misconfigured path obvious at a glance;
 // "0 of 500 notes" is a real answer to a real question.
 function corpus() {
-  try { return get(`SELECT COUNT(*) n FROM pages`).n; } catch { return 0; }
+  try { return get(`SELECT COUNT(*) n FROM pages`)?.n ?? 0; } catch { return 0; }
 }
 
 export function search(query, { k = 8, max_tokens = 1800 } = {}) {
@@ -241,19 +241,27 @@ export async function reread(url, { timeout = 20000 } = {}) {
 
 export function forget(url) {
   url = normUrl(url);
-  const n = get('SELECT COUNT(*) n FROM pages WHERE url=?', url).n;
+  const n = get('SELECT COUNT(*) n FROM pages WHERE url=?', url)?.n ?? 0;
   run('DELETE FROM pages WHERE url=?', url);
   run('DELETE FROM pages_fts WHERE url=?', url);
   return { url, forgotten: n > 0 };
 }
 
+// A read no longer CREATES the store — that fix stopped the tools littering every
+// directory they were asked a question in — which means `get()` returns undefined when
+// there is no store yet, and `.n` on undefined is a TypeError.
+//
+// So `scout serve` on a machine with no cache CRASHED AT STARTUP: stats() runs before the
+// server listens, so a brand-new user's very first command died. Nothing caught it: the
+// tests seed, the CI gate seeds, and my machine has had a cache for weeks. The bug lived
+// in a state my machine never enters — and I put it there myself, fixing something else.
 export function stats() {
   return {
     cache: DB_PATH,
-    pages: get('SELECT COUNT(*) n FROM pages').n,
-    total_md_bytes: get('SELECT COALESCE(SUM(md_bytes),0) n FROM pages').n,
-    total_html_bytes: get('SELECT COALESCE(SUM(html_bytes),0) n FROM pages').n,
-    last_fetched: get('SELECT MAX(fetched_at) m FROM pages').m,
+    pages: get('SELECT COUNT(*) n FROM pages')?.n ?? 0,
+    total_md_bytes: get('SELECT COALESCE(SUM(md_bytes),0) n FROM pages')?.n ?? 0,
+    total_html_bytes: get('SELECT COALESCE(SUM(html_bytes),0) n FROM pages')?.n ?? 0,
+    last_fetched: get('SELECT MAX(fetched_at) m FROM pages')?.m ?? null,
   };
 }
 
