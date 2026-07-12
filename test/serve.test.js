@@ -261,3 +261,45 @@ test('forget: a page can be dropped from the library — and a GET can never do 
       'forgetting it twice is a 404, not a lie');
   } finally { server.close(); }
 });
+
+// ── Say what the tool does to the world ─────────────────────────────────────────
+// MCP tool annotations. The spec's defaults are pessimistic: with NO annotations, a tool
+// is declared destructive and open-world, and a conformant client should warn the user
+// before calling it. So every one of these tools — including `scout_search` — was telling
+// clients it might destroy something. You do not become safe by omission.
+test('a search and a delete no longer look the same to a client', async () => {
+  const { spawn } = await import('node:child_process');
+  const list = await new Promise((resolve) => {
+    const p = spawn('node', ['mcp/mcp-server.js'], { stdio: ['pipe', 'pipe', 'ignore'] });
+    let buf = '';
+    const done = (v) => { try { p.kill('SIGKILL'); } catch {} resolve(v); };
+    setTimeout(() => done([]), 10000);
+    p.stdout.on('data', (d) => {
+      buf += d;
+      const lines = buf.split('\n'); buf = lines.pop();
+      for (const l of lines) { let m; try { m = JSON.parse(l); } catch { continue; }
+        if (m.id === 2 && m.result?.tools) done(m.result.tools); }
+    });
+    const send = (o) => p.stdin.write(JSON.stringify(o) + '\n');
+    send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '1' } } });
+    send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+  });
+
+  assert.ok(list.length, 'the server answered');
+  assert.ok(list.every((t) => t.annotations),
+    `every tool must SAY what it does — silence means "destructive"; missing: ${list.filter((t) => !t.annotations).map((t) => t.name)}`);
+
+  const search = list.find((t) => t.name === 'scout_search');
+  assert.equal(search.annotations.readOnlyHint, true, 'a search changes nothing — the client can skip the confirm');
+  assert.equal(search.annotations.openWorldHint, true, 'but what it hands back is a web page: content from outside the trust boundary');
+
+  const forget = list.find((t) => t.name === 'scout_forget');
+  assert.equal(forget.annotations.readOnlyHint, false);
+  assert.equal(forget.annotations.destructiveHint, true, 'it deletes the cached page — warn first');
+  assert.equal(forget.annotations.idempotentHint, true, 'forgetting twice forgets nothing more — safe to retry');
+
+  const fetched = list.find((t) => t.name === 'scout_fetch');
+  assert.equal(fetched.annotations.destructiveHint, false, 'fetching is additive — it caches, it does not destroy');
+  assert.equal(fetched.annotations.openWorldHint, true, 'and it goes to the network');
+});
