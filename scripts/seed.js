@@ -70,7 +70,7 @@ result is cached, so re-reading the same URL costs nothing and every page you've
 becomes full-text searchable.`,
   },
   {
-    url: 'https://tools-for-agents.dev/token-budgets',
+    url: 'https://tools-for-agents.dev/token-budgets/a/very/long/unbroken/path/that/word-wrap/cannot/break/anywhere/at/all',
     title: 'Why token budgets beat "just read it"',
     description: 'Retrieval that respects a token budget is the difference between an agent that scales and one that stalls.',
     fetched_at: '2026-07-09T16:40:00.000Z',
