@@ -10,6 +10,10 @@ const nowISO = () => new Date().toISOString();
 // slicing its first 10 chars bucketed a late-night read onto the wrong calendar day for anyone not
 // on UTC. The reading overview is a personal "what did I read today", so the day is local.
 const localDay = (iso) => { const d = new Date(iso); return Number.isNaN(+d) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// Coerce a count/limit that arrived NaN ('?k=abc'), a string, 0, negative or Infinity to a sane bound.
+// Raw, a bad value THROWS at the SQLite `LIMIT ?` bind ("datatype mismatch"), makes `LIMIT -1` return
+// the WHOLE table, or makes extractLinks' `out.length < NaN` return nothing — all silent-wrong answers.
+const posInt = (v, def, max) => (Number.isFinite(+v) && +v > 0 ? Math.min(Math.floor(+v), max) : def);
 const normUrl = (u) => { let s = String(u || '').trim(); if (!/^https?:\/\//i.test(s)) s = 'https://' + s; return s; };
 
 async function httpGet(url, timeout) {
@@ -149,6 +153,7 @@ export async function fetchUrl(url, { fresh = false, max_tokens = 6000, raw = fa
 
 // ── read-only "reading room" views (serve the cache; never hit the network) ────
 export function library({ k = 1000 } = {}) {
+  k = posInt(k, 1000, 10000);
   const pages = all(`SELECT url, final_url, title, description, status, html_bytes, md_bytes, fetched_at
                      FROM pages ORDER BY fetched_at DESC LIMIT ?`, k)
     .map((p) => ({ ...p, host: hostOf(p.final_url || p.url), tokens: Math.ceil((p.md_bytes || 0) / 4) }));
@@ -244,6 +249,7 @@ export function search(query, { k = 8, max_tokens = 1800 } = {}) {
 
 // ── links: outbound links from a page (fetches + caches it if needed) ─────────
 export async function links(url, { limit = 100 } = {}) {
+  limit = posInt(limit, 100, 2000);
   url = normUrl(url);
   const r = await httpGet(url, 20000);
   const found = extractLinks(r.text, r.finalUrl, limit);
@@ -281,6 +287,7 @@ export function pageLinks(url, { limit = 60 } = {}) {
 }
 
 export function list({ k = 25 } = {}) {
+  k = posInt(k, 25, 1000);
   return { pages: all(`SELECT url, title, md_bytes, fetched_at FROM pages ORDER BY fetched_at DESC LIMIT ?`, k) };
 }
 

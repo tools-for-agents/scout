@@ -55,6 +55,16 @@ test('search coerces bad numeric args instead of erroring / over-returning', () 
   assert.ok(search('signal', { max_tokens: 'xyz' }).tokens <= 1800, 'bad max_tokens falls back to the default budget');
 });
 
+test('list/library coerce a bad count — no crash at the LIMIT bind, no dumping everything', async () => {
+  const { list, library } = await import('../src/core.js');
+  for (let i = 0; i < 30; i++) save({ url: `https://num.example/${i}`, title: `Num ${i}`, markdown: `body ${i}`, html_bytes: 400 });
+  // default list is 25; a bad k must fall back to it, not THROW at the SQLite LIMIT bind or LIMIT −1 all 30+
+  for (const bad of [NaN, -1, 0, 'abc']) {
+    assert.equal(list({ k: bad }).pages.length, 25, `list k=${String(bad)} → the default 25`);
+  }
+  assert.doesNotThrow(() => library({ k: NaN }), 'library survives a NaN k');
+});
+
 test('search finds a page in any script — the cache is unicode61, so the query must be too', () => {
   // Pages are indexed with unicode61 (every script); a query tokenizer that kept only
   // [A-Za-z0-9] threw away Turkish/Cyrillic/CJK terms and returned nothing that was there.
