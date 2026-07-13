@@ -68,3 +68,28 @@ test('decodeEntities decodes named and numeric entities', () => {
   assert.equal(decodeEntities('a &amp; b &lt;c&gt; &#65; &#x42;'), 'a & b <c> A B');
   assert.equal(decodeEntities('&mdash;&hellip;'), '—…');
 });
+
+// A REAL PAGE HAS MORE THAN ONE <article>. A blog post sits among "related" teaser cards,
+// each of them a perfectly valid <article> — so "find the article" is not a lookup, it is a
+// CHOICE, and scout makes it by length. That choice is the difference between handing an
+// agent the post it asked for and handing it a 12-word advert for a different post.
+//
+// Nothing pinned it. Mutation testing broke the comparator (b.length - a.length -> +) and
+// the whole suite stayed green, which means scout could have started returning an arbitrary
+// teaser card and every test in this file would still have passed.
+test('a page of many <article>s: the longest one is the post, and that is what scout returns', () => {
+  const page = `<!doctype html><html><head><title>Blog</title></head><body><main>
+    <article><h2>Related: ten CSS tricks</h2><p>A teaser card.</p></article>
+    <article><h2>Related: why we moved to Rust</h2><p>Another teaser card.</p></article>
+    <article><h1>The Real Post</h1>
+      <p>The body the reader actually came for, long and substantive, several sentences of
+         genuine prose that an agent would need to answer any question about this page.</p>
+      <p>A second paragraph, so that it is unambiguously the longest article here.</p>
+    </article>
+  </main></body></html>`;
+  const md = htmlToMarkdown(page, 'https://site.com/post');
+  assert.match(md, /The Real Post/, 'the post itself must come back');
+  assert.match(md, /the reader actually came for/, 'and its body with it');
+  assert.doesNotMatch(md, /ten CSS tricks/, 'a teaser card is not the page');
+  assert.doesNotMatch(md, /moved to Rust/, 'nor is the other one');
+});
