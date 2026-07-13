@@ -410,3 +410,34 @@ test('a brand-new user, with no cache at all, can still run every read command',
     assert.equal(r.status, 0, `\`scout ${args.join(' ')}\` exits cleanly with nothing cached`);
   }
 });
+
+// ASKING A QUESTION MUST NOT LEAVE A .scout/ BEHIND IN SOMEONE ELSE'S DIRECTORY.
+//
+// db.js used to open the database AT IMPORT — mkdir, create the file, run the schema — so
+// merely ASKING brought the cache into existence. `scout search` in a home directory left a
+// .scout/ in it. And the empty cache it had just created then ANSWERED the question, with
+// nothing, which reads as "you never read that". The tool invented the evidence for its own
+// answer.
+//
+// cortex has had a test for this since the day it was fixed. scout never got one — a canary
+// mutant flipped the read back to open(true) and the whole suite stayed green.
+test('asking a question does not leave a cache behind in someone else\'s directory', async (t) => {
+  const { mkdtempSync, rmSync, readdirSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join, resolve } = await import('node:path');
+  const { spawnSync } = await import('node:child_process');
+
+  const dir = mkdtempSync(join(tmpdir(), 'scout-nolitter-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const cli = resolve(import.meta.dirname, '..', 'src', 'cli.js');
+  const r = spawnSync('node', [cli, 'search', 'anything'], {
+    cwd: dir, encoding: 'utf8', env: { ...process.env, SCOUT_DB: join(dir, '.scout', 'cache.db') },
+  });
+
+  assert.equal(r.status, 0, 'the question is answered');
+  assert.match(r.stdout, /0 hits of 0 pages read/, 'and the answer carries the size of the haystack');
+  assert.match(r.stdout, /have not read anything yet/,
+    'and says the cache is empty, rather than implying the web does not contain it');
+  assert.deepEqual(readdirSync(dir), [], 'and NOTHING was created — the directory is exactly as it was');
+});
