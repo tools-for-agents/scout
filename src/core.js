@@ -6,6 +6,10 @@ import { htmlToMarkdown, extractTitle, extractDescription, extractLinks } from '
 
 const estTokens = (s) => Math.ceil((s || '').length / 4);
 const nowISO = () => new Date().toISOString();
+// The day a page was read, in the reader's LOCAL timezone. `fetched_at` is a UTC timestamp, so
+// slicing its first 10 chars bucketed a late-night read onto the wrong calendar day for anyone not
+// on UTC. The reading overview is a personal "what did I read today", so the day is local.
+const localDay = (iso) => { const d = new Date(iso); return Number.isNaN(+d) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const normUrl = (u) => { let s = String(u || '').trim(); if (!/^https?:\/\//i.test(s)) s = 'https://' + s; return s; };
 
 async function httpGet(url, timeout) {
@@ -356,7 +360,7 @@ export function overview({ top = 8 } = {}) {
 
   const days = {};
   for (const p of pages) {
-    const d = (p.fetched_at || '').slice(0, 10);
+    const d = localDay(p.fetched_at);
     if (d) days[d] = (days[d] || 0) + 1;
   }
   const by_day = Object.entries(days).sort(([a], [b]) => a < b ? -1 : 1).map(([day, n]) => ({ day, pages: n }));

@@ -105,6 +105,9 @@ test('related surfaces other cached pages from the same host', () => {
 });
 
 test('overview: the reading history adds up — tokens saved, hosts, days, heaviest', async () => {
+  const prevTZ = process.env.TZ;
+  process.env.TZ = 'UTC';  // pin: by_day now buckets in LOCAL time, so fix the zone for the hardcoded dates
+  try {
   // a second host, a different day, and a page whose raw HTML dwarfs its markdown
   save({ url: 'https://news.example.org/a', title: 'Bloated news page',
     markdown: 'Two sentences of actual content.',
@@ -130,7 +133,6 @@ test('overview: the reading history adds up — tokens saved, hosts, days, heavi
   assert.deepEqual(days, [...days].sort(), 'days run oldest → newest');
   assert.ok(days.includes('2026-07-03'), 'the day those pages were read shows up');
   assert.equal(o.by_day.reduce((a, d) => a + d.pages, 0), o.pages, 'every page lands in exactly one day bucket');
-
   // heaviest = what raw HTML would have cost, worst first
   assert.equal(o.heaviest[0].title, 'Bloated news page', 'the 400KB page is the heaviest read');
   assert.ok(o.heaviest[0].html_tokens > o.heaviest[0].tokens * 10, 'and its html dwarfs its markdown');
@@ -147,6 +149,21 @@ test('overview: the reading history adds up — tokens saved, hosts, days, heavi
     const res = await fetch(base + '/api/overview').then((r) => r.json());
     assert.equal(res.saved_tokens, o.saved_tokens, '/api/overview serves the same digest');
   } finally { server.close(); }
+  } finally { if (prevTZ === undefined) delete process.env.TZ; else process.env.TZ = prevTZ; }
+});
+
+test('overview buckets reads by the LOCAL day, not the UTC day', async () => {
+  // fetched_at is a UTC timestamp; slicing its first 10 chars put a late-night read on the wrong
+  // calendar day for a non-UTC reader. A page read at 23:30Z is "tomorrow" at UTC+14.
+  const prevTZ = process.env.TZ;
+  process.env.TZ = 'Pacific/Kiritimati';  // UTC+14 (fixed offset, no DST)
+  try {
+    save({ url: 'https://tz.example/late', title: 'Late-night read',
+      markdown: 'Read just before midnight UTC.', html_bytes: 1000, fetched_at: '2026-03-15T23:30:00.000Z' });
+    const days = overview().by_day.map((d) => d.day);
+    assert.ok(days.includes('2026-03-16'), 'at UTC+14, 23:30Z on the 15th is the LOCAL 16th');
+    assert.ok(!days.includes('2026-03-15'), 'and NOT the UTC 15th (the bug) — no other page fell on that UTC day');
+  } finally { if (prevTZ === undefined) delete process.env.TZ; else process.env.TZ = prevTZ; }
 });
 
 test('serve: stats advertises where cortex lives, so an article can be kept in the brain', async () => {
