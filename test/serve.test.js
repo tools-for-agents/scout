@@ -67,6 +67,26 @@ test('search finds a page in any script — the cache is unicode61, so the query
   }
 });
 
+test('search owns up to what the budget/k hid — it never looks complete when it is not', () => {
+  // A budget that hides pages while reporting itself complete is worse than no budget.
+  for (let i = 0; i < 12; i++) {
+    save({ url: `https://budget.example/${i}`, title: `Budget page ${i}`,
+      markdown: `A page about the zzbudgettopic subject, number ${i}.`, html_bytes: 700 });
+  }
+  const capped = search('zzbudgettopic', { k: 3 });
+  assert.equal(capped.count, 3, 'only k results come back');
+  assert.ok(capped.matched >= 12, 'but it reports how many pages actually matched');
+  assert.equal(capped.withheld, capped.matched - capped.count, 'withheld = matched − returned');
+  assert.equal(capped.limited_by, 'k', 'and it names the ceiling: k');
+
+  const squeezed = search('zzbudgettopic', { k: 20, max_tokens: 20 });
+  assert.ok(squeezed.withheld > 0 && squeezed.limited_by === 'budget', 'a tiny budget names the budget');
+
+  const roomy = search('zzbudgettopic', { k: 50 });
+  assert.equal(roomy.withheld, 0, 'nothing hidden → nothing withheld');
+  assert.equal(roomy.limited_by, null, 'and it does not cry wolf');
+});
+
 test('related surfaces other cached pages from the same host', () => {
   for (let i = 0; i < 3; i++) {
     save({ url: `https://blog.example.org/post-${i}`, title: `Post ${i}`, description: 'x',
