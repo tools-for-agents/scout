@@ -204,6 +204,43 @@ test('links: where a cached page points — from the cache, marking what you hav
   } finally { server.close(); }
 });
 
+// pageLinks (above) reads links from the CACHE. links() is the other one — the
+// agent-facing `scout_links` tool and `scout links` CLI both call it — which FETCHES
+// the page fresh and extracts where it points. That network leg had no coverage.
+test('links: fetching a live page resolves relative hrefs, dedupes, and drops non-web links', async () => {
+  const { links } = await import('../src/core.js');
+  const { createServer } = await import('node:http');
+
+  const origin = createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`<!doctype html><html><body>
+      <a href="https://external.example.org/post">an external post</a>
+      <a href="/relative/page">a relative link</a>
+      <a href="https://external.example.org/post">the same external post again</a>
+      <a href="mailto:someone@example.com">mail me</a>
+      <a href="#top">back to top</a>
+    </body></html>`);
+  });
+  await new Promise((r) => origin.listen(0, r));
+  const port = origin.address().port;
+  const pageUrl = `http://localhost:${port}/hub`;
+  try {
+    const r = await links(pageUrl);
+    const urls = r.links.map((x) => x.url);
+    assert.ok(urls.includes('https://external.example.org/post'), 'the absolute link is kept');
+    assert.ok(urls.includes(`http://localhost:${port}/relative/page`),
+      'the relative href is resolved against the page it came from, not left bare');
+    assert.equal(urls.filter((u) => u === 'https://external.example.org/post').length, 1,
+      'the duplicate is collapsed to one');
+    assert.ok(!urls.some((u) => /^(mailto:|#)/.test(u)), 'mail and in-page anchors are not places to crawl');
+    assert.equal(r.count, r.links.length, 'count matches the list it returns');
+    assert.equal(r.final_url, pageUrl, 'it reports where it actually landed');
+
+    const one = await links(pageUrl, { limit: 1 });
+    assert.equal(one.links.length, 1, 'the limit caps how many come back');
+  } finally { origin.close(); }
+});
+
 test('re-read: the question is not "here it is again" but "did it change"', async () => {
   const { pageDiff } = await import('../src/core.js');
 
