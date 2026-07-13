@@ -45,6 +45,14 @@ const tools = [
     run: (a) => scout.list(a),
   },
   {
+    name: 'scout_reread',
+    description: 'Has a page changed since you last read it? Re-fetches a page you already have cached and returns the fresh markdown ALONG WITH a diff against your cached copy (lines added / removed). Use it to check whether docs, a spec, a changelog or a status page moved on before you rely on what you remember. Returns null if you never read the page — read it with scout_fetch first.',
+    inputSchema: { type: 'object', properties: {
+      url: { type: 'string', description: 'A URL you have already fetched at least once' },
+    }, required: ['url'] },
+    run: (a) => scout.reread(a.url),
+  },
+  {
     name: 'scout_forget',
     description: 'Remove a page from the cache.',
     inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
@@ -83,6 +91,9 @@ const ANNOTATIONS = {
   scout_overview: {"readOnlyHint": true, "openWorldHint": true},
   scout_stats: {"readOnlyHint": true, "openWorldHint": false},
   scout_fetch: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
+  // reread REFRESHES the cache each call — so the baseline it diffs against moves, and a second
+  // identical call reports a different (usually empty) diff. Not idempotent, unlike scout_fetch.
+  scout_reread: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
   scout_forget: {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false},
 };
 
