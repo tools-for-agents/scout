@@ -95,7 +95,7 @@ Try the demo without a network fetch: `node scripts/seed.js` then `scout serve`.
 
 ## How it works
 
-- **Fetch** uses Node's global `fetch` (follows redirects, 20 s timeout, a plain user-agent).
+- **Fetch** uses Node's global `fetch` (follows redirects, 20 s timeout, a plain user-agent). The body is **streamed with a size cap** (`SCOUT_MAX_BYTES`, default 5 MB) rather than buffered whole — a runaway or hostile page can't spike memory or bloat the cache, and if a page is bigger than the cap scout reads the start and *says so* up front.
 - **Extraction** is regex-based readability-lite: strip `<script>/<style>/<nav>/<footer>/…`, pick the densest `<article>`/`<main>`/`<body>` region, convert headings, links (resolved to absolute), **content images** (`<img>`/`<figure>` → markdown, tracking pixels dropped), code, lists, bold/italic, and decode HTML entities. Not a full DOM parse — but it reliably turns an article into readable prose at a fraction of the tokens.
 - **Cache** is a `node:sqlite` table keyed by URL; the same URL returns instantly unless `fresh`. An FTS5 mirror makes the whole history searchable by **bm25**, filled to a token budget (≈4 chars/token) — the same discipline as [`lens`](../lens) and [`cortex`](../cortex).
 - Non-HTML **text** responses (JSON, plain text) are stored verbatim. A **binary** resource (image, PDF, archive, font — by content-type, or a body that decoded to mostly replacement bytes) is not: decoding it as text is mojibake, so scout returns a short note saying what it is instead of handing you — and its cache and search index — garbage.

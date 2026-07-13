@@ -35,7 +35,30 @@ async function httpGet(url, timeout) {
       : (e.cause?.message || e.message || 'the request failed'));
     throw new Error(`could not fetch ${url} — ${why}${code ? ` (${code})` : ''}`);
   }
-  return { status: res.status, finalUrl: res.url || url, contentType: res.headers.get('content-type') || '', text: await res.text() };
+  return { status: res.status, finalUrl: res.url || url, contentType: res.headers.get('content-type') || '',
+    ...(await readCapped(res)) };
+}
+
+// The most a single page may pour into memory and the cache. `res.text()` buffers the WHOLE
+// response unconditionally — so a 500MB page (a log dump, a runaway endpoint, a hostile server)
+// would spike the agent's memory and bloat the SQLite cache + FTS index with it. Stream instead,
+// stop at the cap, and TELL the caller we stopped (never a silent truncation). A web page gets
+// more room than a source file — lens caps those at 1.5MB. Tunable via SCOUT_MAX_BYTES.
+const maxBytes = () => Math.max(1, +process.env.SCOUT_MAX_BYTES || 5_000_000);
+async function readCapped(res) {
+  if (!res.body) return { text: await res.text(), capped: false };
+  const cap = maxBytes();
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let text = '', bytes = 0, capped = false;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) { text += dec.decode(); break; }
+    bytes += value.byteLength;
+    text += dec.decode(value, { stream: true });          // {stream:true} keeps multi-byte chars whole across chunks
+    if (bytes >= cap) { text += dec.decode(); capped = true; await reader.cancel(); break; }
+  }
+  return { text, capped };
 }
 
 function shape(row, max_tokens, fromCache) {
@@ -101,11 +124,19 @@ export async function fetchUrl(url, { fresh = false, max_tokens = 6000, raw = fa
   const title = binary ? `[binary: ${r.contentType || 'unknown type'}]`
     : (isHtml ? (extractTitle(r.text) || url) : url);
   const description = isHtml ? extractDescription(r.text) : '';
-  const markdown = binary
+  let markdown = binary
     ? `scout fetched a binary resource (${r.contentType || 'unknown content-type'}) from ${url}. `
       + `scout turns HTML and text into readable markdown; it cannot render a binary file — an image, PDF, `
       + `archive, or font — as text. Use a tool built for that content type.`
     : (raw || !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl));
+  // The cap is not the same as shape()'s token truncation: the rest of the page was NEVER FETCHED,
+  // so raising max_tokens won't get it. Lead with the note so it survives the token-budget cut.
+  if (r.capped && !binary) {
+    const cap = maxBytes();
+    const size = cap >= 1e6 ? `${Math.round(cap / 1e5) / 10}MB` : `${Math.round(cap / 1000)}KB`;
+    markdown = `> [scout read only the first ${size} of this oversized page — the rest was not fetched. `
+      + `What follows is the beginning; use scout_search to find within it.]\n\n${markdown}`;
+  }
 
   save({ url, final_url: r.finalUrl, title, description, markdown, content_type: r.contentType,
     status: r.status, html_bytes: r.text.length, md_bytes: markdown.length });

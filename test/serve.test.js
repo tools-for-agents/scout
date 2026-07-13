@@ -659,3 +659,32 @@ test('fetching a binary resource returns a clear placeholder, not decoded-mojiba
     assert.doesNotMatch(json.markdown, /binary resource/, 'and is not flagged as binary');
   } finally { origin.close(); }
 });
+
+test('an oversized page is read up to a cap and SAYS it stopped — never a silent truncation', async () => {
+  // `res.text()` buffers the WHOLE response — a runaway page would spike memory and bloat the
+  // cache. scout now streams up to a byte cap and leads with a note (so it survives the token cut).
+  const { fetchUrl } = await import('../src/core.js');
+  const { createServer } = await import('node:http');
+  const prev = process.env.SCOUT_MAX_BYTES;
+  process.env.SCOUT_MAX_BYTES = '40000';  // 40KB, so the test never rides on the network being fast
+  let big = '<!doctype html><title>Big</title><body><main>';
+  while (big.length < 300000) big += '<p>İstanbul Москва readable prose sentence. </p>\n';  // multi-byte across chunk edges
+  big += '</main></body>';
+  const small = '<!doctype html><title>Small</title><body><main><p>A short İstanbul page.</p></main></body>';
+  const srv = createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(req.url.includes('big') ? big : small); });
+  await new Promise((r) => srv.listen(0, r));
+  const base = `http://localhost:${srv.address().port}`;
+  try {
+    const B = await fetchUrl(base + '/big', { fresh: true });
+    assert.match(B.markdown, /scout read only the first 40KB of this oversized page/, 'the cap is announced, up front');
+    assert.ok(B.html_bytes < 100000, `only ~40KB was read, not the full 300KB (got ${B.html_bytes})`);
+    assert.equal((B.markdown.match(/�/g) || []).length, 0, 'non-ASCII survives the chunked read — no split-char mojibake');
+
+    const S = await fetchUrl(base + '/small', { fresh: true });
+    assert.doesNotMatch(S.markdown, /scout read only/, 'a page under the cap is read whole, not annotated');
+    assert.match(S.markdown, /İstanbul/, 'and reads normally');
+  } finally {
+    srv.close();
+    if (prev === undefined) delete process.env.SCOUT_MAX_BYTES; else process.env.SCOUT_MAX_BYTES = prev;
+  }
+});
