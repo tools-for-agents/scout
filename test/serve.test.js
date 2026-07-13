@@ -55,6 +55,18 @@ test('search coerces bad numeric args instead of erroring / over-returning', () 
   assert.ok(search('signal', { max_tokens: 'xyz' }).tokens <= 1800, 'bad max_tokens falls back to the default budget');
 });
 
+test('search finds a page in any script — the cache is unicode61, so the query must be too', () => {
+  // Pages are indexed with unicode61 (every script); a query tokenizer that kept only
+  // [A-Za-z0-9] threw away Turkish/Cyrillic/CJK terms and returned nothing that was there.
+  save({ url: 'https://ornek.com.tr/seyahat', title: 'İstanbul Rehberi',
+    description: 'Şehir notları.', markdown: '# İstanbul\n\nAnkara ve Москва ve 日本語 üzerine notlar.',
+    html_bytes: 1200, fetched_at: '2026-07-06T00:00:00.000Z' });
+  for (const q of ['İstanbul', 'Москва', '日本語']) {
+    assert.ok(search(q).results.some((x) => x.url === 'https://ornek.com.tr/seyahat'),
+      `a ${q} query must find the page that contains it`);
+  }
+});
+
 test('related surfaces other cached pages from the same host', () => {
   for (let i = 0; i < 3; i++) {
     save({ url: `https://blog.example.org/post-${i}`, title: `Post ${i}`, description: 'x',

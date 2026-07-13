@@ -120,7 +120,10 @@ export function related(url, { k = 6 } = {}) {
 
 // ── search everything you've read (FTS5 + bm25, token-budgeted snippets) ──────
 function ftsQuery(q) {
-  const terms = String(q).match(/[A-Za-z0-9_]+/g) || [];
+  // \p{L}\p{N} (not [A-Za-z0-9]) so a query in any script — Turkish, Cyrillic, CJK —
+  // tokenizes the SAME way unicode61 indexed the pages; ASCII-only stripped every
+  // non-Latin term to nothing and searched for a ghost.
+  const terms = String(q).match(/[\p{L}\p{N}_]+/gu) || [];
   return terms.length ? terms.map((t) => `"${t}"`).join(' OR ') : null;
 }
 
