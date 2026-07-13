@@ -46,7 +46,7 @@ function shape(row, max_tokens, fromCache) {
     truncated = true;
   }
   return { url: row.url, final_url: row.final_url, title: row.title, description: row.description,
-    status: row.status, from_cache: fromCache, fetched_at: row.fetched_at,
+    status: row.status, content_type: row.content_type, from_cache: fromCache, fetched_at: row.fetched_at,
     html_bytes: row.html_bytes, md_bytes: row.md_bytes, tokens: estTokens(md), truncated, markdown: md };
 }
 
@@ -71,16 +71,41 @@ export function save({ url, final_url, title, description = '', markdown = '', c
 }
 
 // ── fetch a URL → clean markdown (read-through cache) ──────────────────────────
+// A binary resource (PDF, image, archive, font) decoded as UTF-8 text is mojibake.
+// `res.text()` never fails — it just fills the string with replacement characters — so
+// without this, `scout_fetch` on a PDF handed the agent a blob of garbage that read like a
+// successful page, and poisoned the cache and FTS index with it. Catch it by content-type,
+// or by a body that decoded into mostly replacement/control bytes (a header can be wrong or
+// missing). `raw` deliberately bypasses this — that mode is "give me the bytes as-is".
+function looksBinary(contentType, text) {
+  if (/^(image|audio|video|font)\//i.test(contentType)) return true;
+  if (/\b(pdf|zip|gzip|octet-stream|msword|ms-excel|ms-powerpoint|x-tar|x-7z|x-rar|wasm|ttf|otf|woff2?)\b/i.test(contentType)) return true;
+  const sample = (text || '').slice(0, 4000);
+  if (!sample) return false;
+  let bad = 0;
+  for (const ch of sample) {
+    const c = ch.codePointAt(0);
+    if (c === 0xFFFD || c === 0 || (c > 0 && c < 9) || (c > 13 && c < 32)) bad++;   // NUL / C0 controls (not tab/LF/CR) / replacement
+  }
+  return bad / sample.length > 0.1;
+}
+
 export async function fetchUrl(url, { fresh = false, max_tokens = 6000, raw = false, timeout = 20000 } = {}) {
   url = normUrl(url);
   const cached = get('SELECT * FROM pages WHERE url=?', url);
   if (cached && !fresh) return shape(cached, max_tokens, true);
 
   const r = await httpGet(url, timeout);
-  const isHtml = /html|xml/i.test(r.contentType) || /^\s*<(?:!doctype|html)/i.test(r.text);
-  const title = isHtml ? (extractTitle(r.text) || url) : url;
+  const binary = !raw && looksBinary(r.contentType, r.text);
+  const isHtml = !binary && (/html|xml/i.test(r.contentType) || /^\s*<(?:!doctype|html)/i.test(r.text));
+  const title = binary ? `[binary: ${r.contentType || 'unknown type'}]`
+    : (isHtml ? (extractTitle(r.text) || url) : url);
   const description = isHtml ? extractDescription(r.text) : '';
-  const markdown = raw || !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl);
+  const markdown = binary
+    ? `scout fetched a binary resource (${r.contentType || 'unknown content-type'}) from ${url}. `
+      + `scout turns HTML and text into readable markdown; it cannot render a binary file — an image, PDF, `
+      + `archive, or font — as text. Use a tool built for that content type.`
+    : (raw || !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl));
 
   save({ url, final_url: r.finalUrl, title, description, markdown, content_type: r.contentType,
     status: r.status, html_bytes: r.text.length, md_bytes: markdown.length });

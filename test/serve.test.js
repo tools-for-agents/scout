@@ -633,3 +633,29 @@ test('reread fetches a page again and tells you what changed — or null if you 
   assert.ok(r.previously_read, 'it remembers when you last read it');
   assert.match(r.markdown, /Second story/, 'and returns the fresh content, not the stale cache');
 });
+
+test('fetching a binary resource returns a clear placeholder, not decoded-mojibake garbage', async () => {
+  // `res.text()` never throws on binary — it fills the string with replacement chars — so a
+  // PDF/image used to come back as garbage that read like a successful page and poisoned the
+  // cache + FTS. Now it is caught (by content-type or a mostly-non-text body) and named.
+  const { fetchUrl } = await import('../src/core.js');
+  const { createServer } = await import('node:http');
+  const png = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, ...Array(300).fill(0x99)]);
+  const origin = createServer((req, res) => {
+    if (req.url.includes('png')) { res.writeHead(200, { 'Content-Type': 'image/png' }); res.end(png); }
+    else { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ hello: 'wörld', İ: 'stanbul' })); }
+  });
+  await new Promise((r) => origin.listen(0, r));
+  const base = `http://localhost:${origin.address().port}`;
+  try {
+    const bin = await fetchUrl(base + '/photo.png');
+    assert.match(bin.markdown, /binary resource \(image\/png\)/, 'the binary result names what it is');
+    assert.equal((bin.markdown.match(/�/g) || []).length, 0, 'and carries NO replacement-char garbage');
+    assert.equal(bin.content_type, 'image/png', 'the content type is surfaced so the agent can see why');
+
+    // a text response that merely contains non-ASCII is NOT binary — it stays verbatim.
+    const json = await fetchUrl(base + '/data.json');
+    assert.match(json.markdown, /wörld/, 'JSON with non-ASCII is stored verbatim, not mistaken for binary');
+    assert.doesNotMatch(json.markdown, /binary resource/, 'and is not flagged as binary');
+  } finally { origin.close(); }
+});

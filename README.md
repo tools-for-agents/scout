@@ -98,7 +98,7 @@ Try the demo without a network fetch: `node scripts/seed.js` then `scout serve`.
 - **Fetch** uses Node's global `fetch` (follows redirects, 20 s timeout, a plain user-agent).
 - **Extraction** is regex-based readability-lite: strip `<script>/<style>/<nav>/<footer>/…`, pick the densest `<article>`/`<main>`/`<body>` region, convert headings, links (resolved to absolute), **content images** (`<img>`/`<figure>` → markdown, tracking pixels dropped), code, lists, bold/italic, and decode HTML entities. Not a full DOM parse — but it reliably turns an article into readable prose at a fraction of the tokens.
 - **Cache** is a `node:sqlite` table keyed by URL; the same URL returns instantly unless `fresh`. An FTS5 mirror makes the whole history searchable by **bm25**, filled to a token budget (≈4 chars/token) — the same discipline as [`lens`](../lens) and [`cortex`](../cortex).
-- Non-HTML responses (JSON, plain text) are stored verbatim.
+- Non-HTML **text** responses (JSON, plain text) are stored verbatim. A **binary** resource (image, PDF, archive, font — by content-type, or a body that decoded to mostly replacement bytes) is not: decoding it as text is mojibake, so scout returns a short note saying what it is instead of handing you — and its cache and search index — garbage.
 
 ## The agent toolkit
 
