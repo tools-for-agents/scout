@@ -71,6 +71,12 @@ const CANARIES = [
     find: '  const markdown = raw || !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl);',
     into: '  const markdown = raw && !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl);',
   },
+  {
+    why: 'a page CHANGED if it gained OR lost a line — `&&` reports "unchanged" for a pure addition or removal',
+    file: 'src/core.js',
+    find: '  return { changed: added > 0 || removed > 0, added, removed, was_lines: a.length, now_lines: b.length };',
+    into: '  return { changed: added > 0 && removed > 0, added, removed, was_lines: a.length, now_lines: b.length };',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,

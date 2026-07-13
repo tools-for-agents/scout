@@ -523,3 +523,44 @@ test('scout actually fetches: a real page, sniffed, converted, cached — and re
   assert.match(rawResp.markdown, /<!-- built by a generator -->/, 'the whole response, comment and all');
   assert.doesNotMatch(rawResp.markdown, /^# Real Page/m, 'and specifically NOT the markdown conversion');
 });
+
+// "HAS THIS PAGE CHANGED SINCE I READ IT?" — the re-read feature, exposed on the web view's ↻ button
+// via /api/reread. It re-fetches a page and diffs it against your cached copy. pageDiff (the line
+// diff behind it) and reread (the integration) were both uncovered — coverage flagged the exact lines.
+test('pageDiff reports added and removed lines by identity, not position', async () => {
+  const { pageDiff } = await import('../src/core.js');
+  assert.deepEqual(pageDiff('a\nb\nc', 'a\nb\nc'), { changed: false, added: 0, removed: 0, was_lines: 3, now_lines: 3 },
+    'an identical page has not changed');
+  const addOnly = pageDiff('a\nb', 'a\nb\nc');
+  assert.equal(addOnly.added, 1, 'a new line is one addition');
+  assert.equal(addOnly.changed, true, 'and a page that only GAINED a line has still changed');
+  const rmOnly = pageDiff('a\nb\nc', 'a\nc');
+  assert.equal(rmOnly.removed, 1, 'a gone line is one removal');
+  assert.equal(rmOnly.changed, true, 'and a page that only LOST a line has still changed');
+  const both = pageDiff('a\nold line', 'a\nnew line');
+  assert.equal(both.changed, true, 'a swapped line is a change');
+  assert.equal(both.added, 1); assert.equal(both.removed, 1, 'counted as one add and one remove');
+});
+
+test('reread fetches a page again and tells you what changed — or null if you never read it', async (t) => {
+  const { createServer } = await import('node:http');
+  const { fetchUrl, reread } = await import('../src/core.js');
+
+  let body = '<html><head><title>News</title></head><body><h1>News</h1><p>First story.</p></body></html>';
+  const srv = createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(body); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const url = `http://127.0.0.1:${srv.address().port}/news`;
+
+  assert.equal(await reread(url), null, 'you cannot re-read a page you never read — it returns null, not a fetch');
+
+  await fetchUrl(url);                                   // read it once (caches "First story.")
+  body = body.replace('First story.', 'Second story, added a line.');   // the page changes on the origin
+
+  const r = await reread(url);
+  assert.ok(r, 'now that it is cached, re-read returns a result');
+  assert.equal(r.diff.changed, true, 'and it noticed the page changed');
+  assert.ok(r.diff.added >= 1, 'a line was added');
+  assert.ok(r.previously_read, 'it remembers when you last read it');
+  assert.match(r.markdown, /Second story/, 'and returns the fresh content, not the stale cache');
+});
