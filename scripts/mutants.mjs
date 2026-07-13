@@ -65,6 +65,12 @@ const CANARIES = [
     find: '  const isHtml = /html|xml/i.test(r.contentType) || /^\\s*<(?:!doctype|html)/i.test(r.text);',
     into: '  const isHtml = /html|xml/i.test(r.contentType) && /^\\s*<(?:!doctype|html)/i.test(r.text);',
   },
+  {
+    why: 'raw:true must return the ORIGINAL html — `raw && !isHtml` silently ignores the option on the pages you would use it for',
+    file: 'src/core.js',
+    find: '  const markdown = raw || !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl);',
+    into: '  const markdown = raw && !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl);',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,

@@ -511,4 +511,15 @@ test('scout actually fetches: a real page, sniffed, converted, cached — and re
   const forced = await fetchUrl(url, { fresh: true });
   assert.equal(forced.from_cache, false, 'fresh: true goes back to the network on purpose');
   assert.equal(hits, 2, 'and only then is the server asked a second time');
+
+  // raw: true is a documented scout_fetch option — return the ORIGINAL response, not the readability
+  // extraction. An agent asks for it when markdown would lose what it needs: the actual tag structure,
+  // a table markdown flattens, a <script> payload. The condition is `raw || !isHtml`, and a mutant
+  // turning it to `&&` meant a raw:true request on an HTML page got converted ANYWAY — the option
+  // silently ignored. Nothing tested it (the other "raw" mentions here are the overview's byte-count
+  // digest, not the fetch flag). fresh:true too, so this hits the network and re-derives.
+  const rawResp = await fetchUrl(url, { raw: true, fresh: true });
+  assert.match(rawResp.markdown, /<h1>Real Page<\/h1>/, 'raw:true returns the ORIGINAL HTML, tags intact');
+  assert.match(rawResp.markdown, /<!-- built by a generator -->/, 'the whole response, comment and all');
+  assert.doesNotMatch(rawResp.markdown, /^# Real Page/m, 'and specifically NOT the markdown conversion');
 });
