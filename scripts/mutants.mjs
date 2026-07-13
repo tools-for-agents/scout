@@ -41,6 +41,18 @@ const CANARIES = [
     find: 'export const get = (sql, ...a) => { const d = open(false); return d ? d.prepare(sql).get(...a) : undefined; };',
     into: 'export const get = (sql, ...a) => { const d = open(true); return d ? d.prepare(sql).get(...a) : undefined; };',
   },
+  {
+    why: '`truncated` is a CLAIM about the content — a page cut in half must never say it is whole',
+    file: 'src/core.js',
+    find: '  let truncated = false;',
+    into: '  let truncated = true;',
+  },
+  {
+    why: '...and the cut must actually happen — a page that blows the budget is not a briefing',
+    file: 'src/core.js',
+    find: '    md = md.slice(0, max_tokens * 4) + ',
+    into: '    md = md.slice(0, max_tokens * 400) + ',
+  },
 ];
 
 const run = () => spawnSync('npm', ['test'], { encoding: 'utf8', timeout: 300_000 }).status;

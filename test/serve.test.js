@@ -441,3 +441,31 @@ test('asking a question does not leave a cache behind in someone else\'s directo
     'and says the cache is empty, rather than implying the web does not contain it');
   assert.deepEqual(readdirSync(dir), [], 'and NOTHING was created — the directory is exactly as it was');
 });
+
+// `truncated` IS A CLAIM ABOUT THE CONTENT, and nothing was checking it.
+//
+// scout's whole promise is "a web page, small enough to fit in your budget". When a page does
+// not fit, it is cut — and the caller is told so. Three separate mutants survived here: the
+// flag could be hardcoded (`let truncated = false` -> true), the boundary could slip
+// (`>` -> `>=`), and the slice could be inverted. The suite stayed green for all of them.
+//
+// Both directions, because either one alone is a half-truth:
+//   · a page that WAS cut and says it wasn't → an agent reasons about a document it half read
+//   · a page that was NOT cut and says it was → an agent distrusts a complete answer and refetches
+test('a page too big for the budget is cut, AND SAYS SO — a whole one says nothing of the kind', async () => {
+  const { fetchUrl } = await import('../src/core.js');
+  const long = ('the quick brown fox jumps over the lazy dog. '.repeat(400));   // ~4.5k tokens
+  save({ url: 'https://example.com/long', title: 'Long', markdown: long, status: 200 });
+  save({ url: 'https://example.com/short', title: 'Short', markdown: 'one short line.', status: 200 });
+
+  const cut = await fetchUrl('https://example.com/long', { max_tokens: 100 });
+  assert.equal(cut.from_cache, true, 'read through the cache — no network in a test');
+  assert.equal(cut.truncated, true, 'the page did not fit, and the caller is TOLD it did not fit');
+  assert.ok(cut.tokens <= 130, `and it is actually within the budget, got ${cut.tokens}`);
+  assert.match(cut.markdown, /\[truncated/, 'and the text itself says where it stops');
+
+  const whole = await fetchUrl('https://example.com/short', { max_tokens: 100 });
+  assert.equal(whole.truncated, false, 'a page that fits is NOT reported as cut');
+  assert.match(whole.markdown, /one short line\./, 'and it comes back whole');
+  assert.doesNotMatch(whole.markdown, /\[truncated/, 'with nothing appended to it');
+});
