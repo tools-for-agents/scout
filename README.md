@@ -82,6 +82,7 @@ Try the demo without a network fetch: `node scripts/seed.js` then `scout serve`.
 | `scout_search` | Search every page you've already read — ranked snippets, no re-fetch. |
 | `scout_links` | Extract a page's outbound links (absolute URLs + text) to decide where to go next. |
 | `scout_list` | Your recent reading history. |
+| `scout_reread` | Has a page changed since you read it? Re-fetch and diff against your cached copy. |
 | `scout_forget` | Drop a page from the cache. |
 | `scout_stats` | Pages cached, bytes stored, last fetch. |
 
@@ -115,7 +116,7 @@ Seven zero-dependency, MCP-native tools that form one loop:
 | 👁 | [iris](https://github.com/tools-for-agents/iris) | see — look at what you built, before you claim it works |
 
 **Reading this as an agent?** [`/llms.txt`](https://tools-for-agents.github.io/llms.txt) is the map, and
-[`/tools.json`](https://tools-for-agents.github.io/tools.json) hands you all **67 MCP tools** — every name, every
+[`/tools.json`](https://tools-for-agents.github.io/tools.json) hands you all **70 MCP tools** — every name, every
 description, every install command — in **one fetch**, without cloning anything.
 
 MIT licensed.
