@@ -469,3 +469,46 @@ test('a page too big for the budget is cut, AND SAYS SO — a whole one says not
   assert.match(whole.markdown, /one short line\./, 'and it comes back whole');
   assert.doesNotMatch(whole.markdown, /\[truncated/, 'with nothing appended to it');
 });
+
+// NOBODY HAD EVER MADE SCOUT FETCH ANYTHING.
+//
+// Every test in this suite reaches the cache through save(), so fetchUrl — THE TOOL'S MAIN
+// PATH, the one an agent takes every single time — was exercised by nothing. Two mutants
+// proved it: `fresh = false` could flip to `true` (every read goes to the network, the cache
+// stops existing) and the HTML sniff could turn from `||` to `&&`, and the suite stayed green.
+//
+// The page below is the awkward one that a tidy fixture never is: it is served as text/html but
+// it does NOT start with <!doctype — it opens with a comment, exactly like half the pages on the
+// web. Under `&&` it would not be recognised as HTML, and scout would hand an agent the RAW
+// HTML instead of clean markdown — which is the entire promise of the tool, in reverse.
+test('scout actually fetches: a real page, sniffed, converted, cached — and refetched on demand', async (t) => {
+  const { createServer } = await import('node:http');
+  const { fetchUrl } = await import('../src/core.js');
+
+  let hits = 0;
+  const srv = createServer((req, res) => {
+    hits++;
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    // No doctype. Opens with a comment. Perfectly ordinary, and fatal to a stricter sniff.
+    res.end('<!-- built by a generator -->\n<html><head><title>Real Page</title></head>' +
+      '<body><h1>Real Page</h1><p>The body an agent came for.</p></body></html>');
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const url = `http://127.0.0.1:${srv.address().port}/page`;
+
+  const first = await fetchUrl(url);
+  assert.equal(first.from_cache, false, 'the first read goes to the network');
+  assert.equal(hits, 1, 'and the server saw exactly one request');
+  assert.equal(first.title, 'Real Page', 'the title is extracted — so it WAS recognised as HTML');
+  assert.match(first.markdown, /^# Real Page/m, 'and the body came back as markdown');
+  assert.doesNotMatch(first.markdown, /<h1>|<html>/, 'NOT as the raw HTML an agent cannot afford');
+
+  const second = await fetchUrl(url);
+  assert.equal(second.from_cache, true, 'the second read is served from the cache');
+  assert.equal(hits, 1, 'and the server was NOT asked again — the cache is the whole point');
+
+  const forced = await fetchUrl(url, { fresh: true });
+  assert.equal(forced.from_cache, false, 'fresh: true goes back to the network on purpose');
+  assert.equal(hits, 2, 'and only then is the server asked a second time');
+});

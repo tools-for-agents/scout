@@ -53,6 +53,18 @@ const CANARIES = [
     find: '    md = md.slice(0, max_tokens * 4) + ',
     into: '    md = md.slice(0, max_tokens * 400) + ',
   },
+  {
+    why: 'the cache is the whole point — `fresh` defaults to false, or every read goes back to the network',
+    file: 'src/core.js',
+    find: 'export async function fetchUrl(url, { fresh = false, max_tokens = 6000, raw = false, timeout = 20000 } = {}) {',
+    into: 'export async function fetchUrl(url, { fresh = true, max_tokens = 6000, raw = false, timeout = 20000 } = {}) {',
+  },
+  {
+    why: 'an HTML page without a doctype is still HTML — a stricter sniff hands an agent the raw markup',
+    file: 'src/core.js',
+    find: '  const isHtml = /html|xml/i.test(r.contentType) || /^\\s*<(?:!doctype|html)/i.test(r.text);',
+    into: '  const isHtml = /html|xml/i.test(r.contentType) && /^\\s*<(?:!doctype|html)/i.test(r.text);',
+  },
 ];
 
 const run = () => spawnSync('npm', ['test'], { encoding: 'utf8', timeout: 300_000 }).status;
