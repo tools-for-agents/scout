@@ -53,6 +53,22 @@ async function httpGet(url, timeout) {
 // stop at the cap, and TELL the caller we stopped (never a silent truncation). A web page gets
 // more room than a source file — lens caps those at 1.5MB. Tunable via SCOUT_MAX_BYTES.
 const maxBytes = () => Math.max(1, +process.env.SCOUT_MAX_BYTES || 5_000_000);
+
+// SQLite's snippet() is superlinear in the size of the document it excerpts: 3ms on a 16KB page,
+// 792ms at 256KB, and 142 SECONDS at 4MB — while the MATCH that found the row costs 1ms. So ONE
+// oversized page hangs every search whose term it contains: no error, no answer, just a dead call.
+//
+// 🔑 AND THE CAP ABOVE DOES NOT SAVE US — IT IS WHAT LETS IT IN. maxBytes() says a 5MB page is
+// perfectly legal to fetch and cache. snippet() says 4MB takes 142 seconds. The two limits were
+// each chosen sensibly, on their own, and NOBODY EVER ASKED THEM ABOUT EACH OTHER: scout's own cap
+// admits exactly the page that hangs scout's own search. A limit is not a guarantee about anything
+// downstream of it.
+//
+// CASE short-circuits in SQLite, so snippet() is never evaluated past this bound. instr() is a plain
+// C scan (2ms on the same 4MB body), so an oversized page still gets a REAL window around a REAL
+// match; where the porter tokenizer matched by stem and no literal window exists, the hit says so
+// rather than pass its head off as the matching passage.
+const SNIPPET_MAX = 64 * 1024; // bounds snippet() at ~30ms worst case; every real page is far below
 async function readCapped(res) {
   if (!res.body) return { text: await res.text(), capped: false };
   const cap = maxBytes();
@@ -218,11 +234,20 @@ export function search(query, { k = 8, max_tokens = 1800 } = {}) {
   max_tokens = Number.isFinite(+max_tokens) && +max_tokens > 0 ? Math.floor(+max_tokens) : 1800;
   const m = ftsQuery(query);
   if (!m) return { query, count: 0, tokens: 0, results: [] };
+  const probe = (String(query).match(/[\p{L}\p{N}_]+/gu) || [''])[0];
   let rows;
   try {
-    rows = all(`SELECT p.url, p.title, snippet(pages_fts, 2, '⟦', '⟧', ' … ', 18) AS snip, bm25(pages_fts) AS score
+    rows = all(`SELECT p.url, p.title, length(pages_fts.markdown) AS chars,
+                  CASE WHEN length(pages_fts.markdown) <= ?
+                       THEN snippet(pages_fts, 2, '⟦', '⟧', ' … ', 18)
+                       ELSE substr(pages_fts.markdown,
+                              MAX(1, instr(lower(pages_fts.markdown), lower(?)) - 90), 240) END AS snip,
+                  CASE WHEN length(pages_fts.markdown) <= ? THEN 1
+                       ELSE instr(lower(pages_fts.markdown), lower(?)) > 0 END AS located,
+                  bm25(pages_fts) AS score
                 FROM pages_fts JOIN pages p ON p.url = pages_fts.url
-                WHERE pages_fts MATCH ? ORDER BY score LIMIT ?`, m, Math.max(k * 3, 20));
+                WHERE pages_fts MATCH ? ORDER BY score LIMIT ?`,
+      SNIPPET_MAX, probe, SNIPPET_MAX, probe, m, Math.max(k * 3, 20));
   } catch (e) { return { query, error: e.message, results: [] }; }
 
   const results = [];
@@ -232,7 +257,10 @@ export function search(query, { k = 8, max_tokens = 1800 } = {}) {
     const excerpt = (r.snip || '').replace(/\s+/g, ' ').trim();
     const tk = estTokens(excerpt);
     if (tokens + tk > max_tokens && results.length > 0) { squeezed++; continue; }
-    results.push({ url: r.url, title: r.title, score: Math.round(r.score * 1000) / 1000, tokens: tk, excerpt });
+    const hit = { url: r.url, title: r.title, score: Math.round(r.score * 1000) / 1000, tokens: tk, excerpt };
+    // Say so, rather than let the caller take this for the usual best-matching window.
+    if (r.chars > SNIPPET_MAX) { hit.oversized = true; hit.chars = r.chars; hit.excerpt_is_match = !!r.located; }
+    results.push(hit);
     tokens += tk;
   }
 
