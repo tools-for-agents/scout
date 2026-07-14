@@ -715,3 +715,45 @@ test('an oversized page is read up to a cap and SAYS it stopped — never a sile
     if (prev === undefined) delete process.env.SCOUT_MAX_BYTES; else process.env.SCOUT_MAX_BYTES = prev;
   }
 });
+
+test('a SAVE must not make a page VANISH while it is being saved', async () => {
+  // save() upserts the page row (atomic) and then DELETEs + INSERTs its FTS entry — two more
+  // statements, two more transactions. A search landing between them sees the page with NO FTS row,
+  // so scout answers "0 hits across your reading" for a page that is right there in the cache.
+  // Measured: 22,811 searches during a concurrent save, fewest pages ever visible 29 of 30 — one page
+  // silently invisible at a time, and never zero overall, so nothing ever looked broken.
+  const { execFile } = await import('node:child_process');
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join: pjoin } = await import('node:path');
+
+  const dir = mkdtempSync(pjoin(tmpdir(), 'scout-race-'));
+  const core = new URL('../src/core.js', import.meta.url).href;
+  const env = { ...process.env, SCOUT_DB: pjoin(dir, 'cache.db') };
+  const N = 15;
+
+  const saver = pjoin(dir, 'save.mjs');
+  writeFileSync(saver, `
+    const m = await import(${JSON.stringify(core)});
+    for (let r = 0; r < 8; r++) for (let i = 0; i < ${N}; i++)
+      m.save({ url: 'https://ex.com/p' + i, title: 'Page ' + i, markdown: 'contains zzracepage here', html_bytes: 100 });
+  `);
+  const seek = pjoin(dir, 'seek.mjs');
+  writeFileSync(seek, `
+    const m = await import(${JSON.stringify(core)});
+    let min = 1e9;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 2500) { const r = m.search('zzracepage', { k: 50 }); if (r.matched < min) min = r.matched; }
+    console.log(min);
+  `);
+
+  const run = (s) => new Promise((res, rej) =>
+    execFile(process.execPath, [s], { env, encoding: 'utf8' }, (e, out) => (e ? rej(e) : res(out))));
+
+  try {
+    await run(saver);                                  // seed the cache
+    const [, seen] = await Promise.all([run(saver), run(seek)]);   // save WHILE searching
+    assert.equal(+seen.trim(), N,
+      `every search during a save must see all ${N} pages — the fewest seen was ${seen.trim()}`);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

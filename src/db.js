@@ -98,3 +98,26 @@ export const get = (sql, ...a) => { const d = open(false); return d ? d.prepare(
 export const all = (sql, ...a) => { const d = open(false); return d ? d.prepare(sql).all(...a) : []; };
 export const run = (sql, ...a) => open(true).prepare(sql).run(...a);
 export { DB_PATH };
+
+// ── A SAVE MUST NOT MAKE A PAGE VANISH WHILE IT IS BEING SAVED ────────────────
+//
+// save() upserts the page row (atomic) and then DELETEs + INSERTs its FTS entry — two more
+// statements, two more transactions. A search landing between them sees the page with NO FTS row, so
+// scout answers "0 hits across your reading" for a page that is right there in the cache. Measured:
+// 22,811 searches during a concurrent save, and the fewest pages ever visible was 29 of 30 — one page
+// silently invisible at a time. Never zero overall, so nothing ever looked broken.
+// A TRANSIENT WRONG ANSWER IS STILL A WRONG ANSWER. WAL readers see a snapshot: with the three
+// statements in one transaction they see the OLD entry or the NEW one, never neither.
+let _txDepth = 0;
+export function atomically(fn) {
+  const d = writeDb();
+  if (_txDepth++ === 0) d.exec('BEGIN IMMEDIATE;');
+  try {
+    const r = fn();
+    if (--_txDepth === 0) d.exec('COMMIT;');
+    return r;
+  } catch (e) {
+    if (--_txDepth === 0) { try { d.exec('ROLLBACK;'); } catch { /* nothing to roll back */ } }
+    throw e;
+  }
+}

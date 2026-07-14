@@ -1,7 +1,7 @@
 // scout core — the agent's window to the web. Fetch a URL, extract clean
 // readable markdown, cache it (so re-reads cost nothing), and search everything
 // you've ever read. Token-budgeted, like lens/cortex — pointed at the web.
-import { get, all, run, DB_PATH, storeExists } from './db.js';
+import { get, all, run, DB_PATH, storeExists, atomically } from './db.js';
 import { htmlToMarkdown, extractTitle, extractDescription, extractLinks } from './extract.js';
 
 const estTokens = (s) => Math.ceil((s || '').length / 4);
@@ -106,14 +106,19 @@ export function save({ url, final_url, title, description = '', markdown = '', c
   final_url = final_url || url;
   html_bytes = html_bytes ?? markdown.length;
   md_bytes = md_bytes ?? markdown.length;
-  run(`INSERT INTO pages (url,final_url,title,description,markdown,content_type,status,html_bytes,md_bytes,fetched_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)
-       ON CONFLICT(url) DO UPDATE SET final_url=excluded.final_url, title=excluded.title,
-         description=excluded.description, markdown=excluded.markdown, content_type=excluded.content_type,
-         status=excluded.status, html_bytes=excluded.html_bytes, md_bytes=excluded.md_bytes, fetched_at=excluded.fetched_at`,
-    url, final_url, title, description, markdown, content_type, status, html_bytes, md_bytes, fetched_at || nowISO());
-  run('DELETE FROM pages_fts WHERE url=?', url);
-  run('INSERT INTO pages_fts (url,title,markdown) VALUES (?,?,?)', url, title, markdown);
+  // The page row and its FTS entry must land TOGETHER — apart, a search landing between the DELETE
+  // and the INSERT sees this page with NO FTS row, and scout answers "0 hits across your reading"
+  // about a page that is right there in the cache. (See `atomically` in db.js.)
+  atomically(() => {
+    run(`INSERT INTO pages (url,final_url,title,description,markdown,content_type,status,html_bytes,md_bytes,fetched_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(url) DO UPDATE SET final_url=excluded.final_url, title=excluded.title,
+           description=excluded.description, markdown=excluded.markdown, content_type=excluded.content_type,
+           status=excluded.status, html_bytes=excluded.html_bytes, md_bytes=excluded.md_bytes, fetched_at=excluded.fetched_at`,
+      url, final_url, title, description, markdown, content_type, status, html_bytes, md_bytes, fetched_at || nowISO());
+    run('DELETE FROM pages_fts WHERE url=?', url);
+    run('INSERT INTO pages_fts (url,title,markdown) VALUES (?,?,?)', url, title, markdown);
+  });
   return get('SELECT * FROM pages WHERE url=?', url);
 }
 

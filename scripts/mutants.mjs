@@ -83,6 +83,12 @@ const CANARIES = [
     find: 'const SNIPPET_MAX = 64 * 1024; // bounds snippet() at ~30ms worst case; every real page is far below',
     into: 'const SNIPPET_MAX = Infinity; // bounds snippet() at ~30ms worst case; every real page is far below',
   },
+  {
+    why: 'a SAVE must not make a page VANISH — split apart, a search sees the page with NO FTS row and scout answers "0 hits across your reading"',
+    file: 'src/db.js',
+    find: '  if (_txDepth++ === 0) d.exec(\'BEGIN IMMEDIATE;\');',
+    into: '  if (false) d.exec(\'BEGIN IMMEDIATE;\');',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,
