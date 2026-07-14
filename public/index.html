@@ -25,14 +25,14 @@
     /* paper — a bright reading desk by daylight */
     --bg:#f2ede2; --surface:#fbf8f1; --surface-2:#f5f0e6; --line:#e3dccb; --line-2:#d6ccb8;
     --ink:#2b2520; --ink-soft:#4c443b; --muted:#70665b; --faint:#776d5e;
-    --accent:#915700; --accent-soft:#efe6d2; --mark:#9a6a15; --mark-bg:rgba(180,122,34,.2);
+    --accent:#915700; --accent-soft:#efe6d2; --mark:#6b4906; --mark-bg:rgba(180,122,34,.2);
     --shadow:0 10px 34px rgba(80,60,30,.12);
   }
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="night"]) {
       --bg:#f2ede2; --surface:#fbf8f1; --surface-2:#f5f0e6; --line:#e3dccb; --line-2:#d6ccb8;
       --ink:#2b2520; --ink-soft:#4c443b; --muted:#70665b; --faint:#776d5e;
-      --accent:#915700; --accent-soft:#efe6d2; --mark:#9a6a15; --mark-bg:rgba(180,122,34,.2);
+      --accent:#915700; --accent-soft:#efe6d2; --mark:#6b4906; --mark-bg:rgba(180,122,34,.2);
       --shadow:0 10px 34px rgba(80,60,30,.12);
     }
   }
@@ -158,6 +158,16 @@
   .recent .rchip .rt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px; }
   .list { flex:1; overflow:auto; padding: 8px; }
   .list-label { font-size:12px; color:var(--faint); text-transform:uppercase; letter-spacing:1px; padding: 8px 12px 8px; }
+  .list-label b { color:var(--ink); }
+  .list-label .of { color:var(--muted); font-weight:400; margin:0 3px; }
+  /* What the result cap cost you, and the one click that buys it back — see runPageSearch. */
+  .squeeze { margin: 8px 12px 14px; padding: 10px 12px; background:var(--surface-2); border:1px solid var(--line);
+             border-radius: 8px; font-size: 12px; color:var(--ink-soft); line-height: 1.5; }
+  .squeeze b { color:var(--ink); }
+  .sq-b { margin-top: 8px; display:inline-block; font: inherit; font-size: 12px; cursor:pointer;
+          background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent);
+          border-radius: 6px; padding: 4px 12px; }
+  .sq-b:hover { background:var(--accent); color:var(--bg); }
   /* host filter chips over the shelf */
   .hostbar { display:flex; flex-wrap:wrap; gap: 4px; padding: 8px 12px 4px; }
   .hostbar[hidden] { display:none; }
@@ -695,16 +705,32 @@ $('#list').addEventListener('keydown', (e) => {   // keyboard-operable article c
 
 // ── Search ───────────────────────────────────────────────────────────────────
 let sTimer;
+// The list must never show a truncated result as if it were the whole answer. The agent path has
+// reported matched/withheld since Cycle 75; the browser silently showed "20 hits" over a search that
+// matched 30 and hid 10 — a list that hides pages while looking complete is worse than no list. SK is
+// the result cap; the widen affordance below raises it and re-runs, so what was hidden is one click away.
+let SK = 20, lastSearchQ = '';
+async function runPageSearch(q) {
+  lastSearchQ = q;
+  const r = await api(`/api/search?k=${SK}&q=` + encodeURIComponent(q));
+  if (!r.count) { $('#list').innerHTML = `<div class="list-empty">No matches for “${esc(q)}”.</div>`; return; }
+  const of = r.withheld ? `<span class="of">of ${r.matched}</span>` : '';
+  const label = `<div class="list-label"><b>${r.count}</b>${of} hit${r.count === 1 ? '' : 's'} · ~${r.tokens} tokens</div>`;
+  const more = r.withheld
+    ? `<div class="squeeze"><b>${r.withheld} more page${r.withheld === 1 ? '' : 's'} matched</b> but you’re seeing the top ${r.count} — the reading room is not the whole cache. `
+      + `<button class="sq-b" id="widen">Show ${SK * 2}</button></div>`
+    : '';
+  $('#list').innerHTML = label + r.results.map(resultCard).join('') + more;
+}
+$('#list').addEventListener('click', (e) => {
+  if (e.target.id === 'widen') { SK *= 2; runPageSearch(lastSearchQ); }
+});
 $('#q').addEventListener('input', (e) => {
   clearTimeout(sTimer);
   const q = e.target.value.trim();
+  SK = 20;                                       // a fresh query starts from the default cap
   if (!q) { renderList(visibleLib()); return; }
-  sTimer = setTimeout(async () => {
-    const r = await api('/api/search?k=20&q=' + encodeURIComponent(q));
-    $('#list').innerHTML = r.count
-      ? `<div class="list-label">${r.count} hit${r.count === 1 ? '' : 's'} · ~${r.tokens} tokens</div>` + r.results.map(resultCard).join('')
-      : `<div class="list-empty">No matches for “${esc(q)}”.</div>`;
-  }, 170);
+  sTimer = setTimeout(() => runPageSearch(q), 170);
 });
 $('#q').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.target.value = ''; renderList(visibleLib()); e.target.blur(); } });
 
