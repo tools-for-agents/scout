@@ -732,18 +732,35 @@ test('a SAVE must not make a page VANISH while it is being saved', async () => {
   const env = { ...process.env, SCOUT_DB: pjoin(dir, 'cache.db') };
   const N = 15;
 
+  // The window is the time between the FTS DELETE and the FTS INSERT, so make the INSERT SLOW: a big
+  // markdown body means a big FTS write. With a tiny body the gap is microseconds and the race only
+  // reproduces on some machines — it survived this canary in CI while dying locally, which is a test
+  // that only SOMETIMES guards. Widen the window until the bug is deterministic, or do not claim it.
+  // 🔑 THE SEARCHER MUST RUN FOR EXACTLY AS LONG AS THE WRITER — NOT FOR A FIXED TIME.
+  // My first cut gave the searcher a fixed 2.5s window and hoped it overlapped the writes. It caught
+  // the race on my machine and MISSED it in CI, so the canary SURVIVED there: a race test that only
+  // sometimes reproduces the race only sometimes guards, and a flaky canary teaches you to ignore the
+  // gate. The writer now drops a sentinel when it finishes and the searcher polls until it appears —
+  // full overlap, every run, on any hardware. (The big body also widens the DELETE→INSERT window.)
+  const done = pjoin(dir, 'DONE');
   const saver = pjoin(dir, 'save.mjs');
   writeFileSync(saver, `
+    import fs from 'node:fs';
     const m = await import(${JSON.stringify(core)});
-    for (let r = 0; r < 8; r++) for (let i = 0; i < ${N}; i++)
-      m.save({ url: 'https://ex.com/p' + i, title: 'Page ' + i, markdown: 'contains zzracepage here', html_bytes: 100 });
+    const big = 'zzracepage lorem ipsum dolor sit amet '.repeat(4000);   // ~150KB → a slow FTS write
+    for (let r = 0; r < 25; r++) for (let i = 0; i < ${N}; i++)
+      m.save({ url: 'https://ex.com/p' + i, title: 'Page ' + i, markdown: big, html_bytes: 100 });
+    fs.writeFileSync(${JSON.stringify(done)}, 'x');
   `);
   const seek = pjoin(dir, 'seek.mjs');
   writeFileSync(seek, `
+    import fs from 'node:fs';
     const m = await import(${JSON.stringify(core)});
     let min = 1e9;
-    const t0 = Date.now();
-    while (Date.now() - t0 < 2500) { const r = m.search('zzracepage', { k: 50 }); if (r.matched < min) min = r.matched; }
+    while (!fs.existsSync(${JSON.stringify(done)})) {
+      const r = m.search('zzracepage', { k: 50 });
+      if (r.matched < min) min = r.matched;
+    }
     console.log(min);
   `);
 
@@ -752,6 +769,7 @@ test('a SAVE must not make a page VANISH while it is being saved', async () => {
 
   try {
     await run(saver);                                  // seed the cache
+    rmSync(done, { force: true });                     // …and clear the sentinel the seed run dropped
     const [, seen] = await Promise.all([run(saver), run(seek)]);   // save WHILE searching
     assert.equal(+seen.trim(), N,
       `every search during a save must see all ${N} pages — the fewest seen was ${seen.trim()}`);
