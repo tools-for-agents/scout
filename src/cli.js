@@ -31,6 +31,16 @@ try {
     out(r.markdown);
   } else if (cmd === 'search') {
     const r = await scout.search(arg() || '', { k: +flag('-k', 8), max_tokens: +flag('--tokens', 1800) });
+    // 🔑 THE CORE WAS HONEST AND THE CLI THREW THE HONESTY AWAY. search() returns { error } when the
+    // cache cannot be read (a corrupt file, a drifted schema) — and this printed
+    // "— undefined hits, ~undefined tokens —" and said nothing. An agent reads that as NO HITS: the
+    // tool KNEW it had failed and did not say so, which is the confident wrong answer in its purest form.
+    if (r.error) {
+      console.error(`scout could not search your reading — ${r.error}\n`
+        + `  This is NOT "you have not read that". The cache is unreadable, so NOTHING was searched.\n`
+        + `  Move or delete it and re-fetch the pages you need — the cache is a cache, not a source.`);
+      process.exit(1);
+    }
     for (const x of r.results) out(`\n▸ ${x.title}  score=${x.score}\n  ${x.url}\n  ${x.excerpt}`);
     const hay = r.searched ? ` of ${r.searched.pages} page${r.searched.pages === 1 ? '' : 's'} read` : '';
     out(`\n— ${r.count} hits${hay}, ~${r.tokens} tokens —`);

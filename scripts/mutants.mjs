@@ -89,6 +89,12 @@ const CANARIES = [
     find: '  if (_txDepth++ === 0) d.exec(\'BEGIN IMMEDIATE;\');',
     into: '  if (false) d.exec(\'BEGIN IMMEDIATE;\');',
   },
+  {
+    why: 'an UNREADABLE cache is not an empty one — without this the CLI printed "undefined hits" and an agent read it as NO HITS',
+    file: 'src/cli.js',
+    find: '    if (r.error) {',
+    into: '    if (false) {',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,

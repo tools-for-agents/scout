@@ -775,3 +775,36 @@ test('a SAVE must not make a page VANISH while it is being saved', async () => {
       `every search during a save must see all ${N} pages — the fewest seen was ${seen.trim()}`);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('an UNREADABLE cache is not an empty one — the CLI must not print "undefined hits"', async () => {
+  // The core was HONEST: search() returns { error } when the cache cannot be read. The CLI threw that
+  // honesty away — it printed "— undefined hits, ~undefined tokens —" and said nothing else. An agent
+  // reads that as NO HITS. The tool KNEW it had failed and did not say so, which is the confident wrong
+  // answer in its purest form. (lens's CLI already got this right; scout's and cortex's did not.)
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync, rmSync, writeFileSync: wf } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join: pjoin } = await import('node:path');
+  const { randomBytes } = await import('node:crypto');
+
+  const dir = mkdtempSync(pjoin(tmpdir(), 'scout-corrupt-'));
+  const db = pjoin(dir, 'cache.db');
+  wf(db, randomBytes(4096));                       // a file that is NOT a database
+  const cli = new URL('../src/cli.js', import.meta.url).pathname;
+
+  try {
+    let out = '', code = 0;
+    try {
+      execFileSync(process.execPath, [cli, 'search', 'anything'],
+        { env: { ...process.env, SCOUT_DB: db }, encoding: 'utf8', stdio: 'pipe' });
+    } catch (e) {
+      code = e.status;
+      out = `${e.stdout || ''}${e.stderr || ''}`;
+    }
+    assert.notEqual(code, 0, 'an unreadable cache must FAIL, not succeed with nothing');
+    assert.doesNotMatch(out, /undefined hits/, 'never "undefined hits" — that reads as "no hits"');
+    assert.match(out, /could not search/i, 'it says it could not search');
+    assert.match(out, /NOT "you have not read that"/, 'and that this is not an empty result');
+    assert.match(out, /re-fetch|delete/i, 'and what to do about it');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
