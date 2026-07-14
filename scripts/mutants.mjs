@@ -62,14 +62,14 @@ const CANARIES = [
   {
     why: 'an HTML page without a doctype is still HTML — a stricter sniff hands an agent the raw markup',
     file: 'src/core.js',
-    find: '  const isHtml = /html|xml/i.test(r.contentType) || /^\\s*<(?:!doctype|html)/i.test(r.text);',
-    into: '  const isHtml = /html|xml/i.test(r.contentType) && /^\\s*<(?:!doctype|html)/i.test(r.text);',
+    find: '  const isHtml = !binary && (/html|xml/i.test(r.contentType) || /^\\s*<(?:!doctype|html)/i.test(r.text));',
+    into: '  const isHtml = !binary && (/html|xml/i.test(r.contentType) && /^\\s*<(?:!doctype|html)/i.test(r.text));',
   },
   {
     why: 'raw:true must return the ORIGINAL html — `raw && !isHtml` silently ignores the option on the pages you would use it for',
     file: 'src/core.js',
-    find: '  const markdown = raw || !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl);',
-    into: '  const markdown = raw && !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl);',
+    find: '    : (raw || !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl));',
+    into: '    : (raw && !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl));',
   },
   {
     why: 'a page CHANGED if it gained OR lost a line — `&&` reports "unchanged" for a pure addition or removal',
