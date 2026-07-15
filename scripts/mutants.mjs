@@ -102,6 +102,12 @@ const CANARIES = [
     into: '  return { changed: added > 0 && removed > 0, added, removed, was_lines: a.length, now_lines: b.length };',
   },
   {
+    why: 'the diff counts line MULTIPLICITY, not set membership — count by presence and a duplicate line added (or one of two identical rows removed) leaves the set unchanged, so reread reports "no change" for a page that DID change',
+    file: 'src/core.js',
+    find: '  for (const [l, n] of cb) added += Math.max(0, n - (ca.get(l) || 0));',
+    into: '  for (const [l, n] of cb) added += (ca.get(l) ? 0 : n);',
+  },
+  {
     why: 'snippet() is superlinear — unbounded, ONE oversized page hangs every search that touches it (142s at 4MB)',
     file: 'src/core.js',
     find: 'const SNIPPET_MAX = 64 * 1024; // bounds snippet() at ~30ms worst case; every real page is far below',

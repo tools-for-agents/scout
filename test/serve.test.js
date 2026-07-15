@@ -312,6 +312,22 @@ test('re-read: the question is not "here it is again" but "did it change"', asyn
   assert.equal(moved.added, 2, 'two lines are new');
   assert.equal(moved.removed, 1, 'one is gone');
 
+  // A change that only alters a line's COUNT is still a change. The old Set-based diff missed these: a
+  // duplicate line added — or one of two identical lines removed — left both sets unchanged, so reread
+  // reported "no change" (added:0) for a page that grew or shrank. reread's whole job, answered backwards,
+  // exactly where repeated lines are involved (status rows, list items, boilerplate).
+  const dupAdded = pageDiff('x\ny\nz', 'x\ny\nz\ny');
+  assert.equal(dupAdded.changed, true, 'a duplicate line added is a change');
+  assert.equal(dupAdded.added, 1, 'and it is counted, though the line already existed elsewhere');
+  assert.equal(dupAdded.removed, 0);
+  const swap = pageDiff('a\na\nb', 'a\nb\nb');
+  assert.equal(swap.changed, true, 'one of two "a" lines becoming a "b" is a change, even at equal length');
+  assert.equal(swap.added, 1);
+  assert.equal(swap.removed, 1);
+  // Over-fire guard: a pure reordering with identical content is NOT a change (same multiset) — the fix
+  // counts multiplicity, it does not start flagging order.
+  assert.equal(pageDiff('a\nb\nc', 'c\nb\na').changed, false, 'a reordering with identical content is not a change');
+
   const server = createScoutServer();
   await new Promise((r) => server.listen(0, r));
   const base = `http://localhost:${server.address().port}`;

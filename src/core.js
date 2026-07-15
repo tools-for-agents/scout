@@ -401,9 +401,17 @@ export function list({ k = 25 } = {}) {
 const mdLines = (s) => String(s || '').split('\n').map((l) => l.trim()).filter(Boolean);
 export function pageDiff(before, after) {
   const a = mdLines(before), b = mdLines(after);
-  const setA = new Set(a), setB = new Set(b);
-  const added = b.filter((l) => !setA.has(l)).length;
-  const removed = a.filter((l) => !setB.has(l)).length;
+  // Count added/removed as MULTISET differences, not set membership. A Set ignores HOW MANY times a line
+  // occurs, so a change that only alters a line's count — a duplicate entry added to a status page, one of
+  // two identical rows removed, an "a" line turning into a "b" line — left both sets unchanged, and reread
+  // reported "no change" (added:0, removed:0) for a page that DID change. reread's one job is to answer
+  // "did this move on before I trust my cached copy?"; the set-based diff answered it wrong exactly when
+  // repeated lines are in play (list items, boilerplate, "Operational" status rows), which is common.
+  const count = (lines) => { const m = new Map(); for (const l of lines) m.set(l, (m.get(l) || 0) + 1); return m; };
+  const ca = count(a), cb = count(b);
+  let added = 0, removed = 0;
+  for (const [l, n] of cb) added += Math.max(0, n - (ca.get(l) || 0));
+  for (const [l, n] of ca) removed += Math.max(0, n - (cb.get(l) || 0));
   return { changed: added > 0 || removed > 0, added, removed, was_lines: a.length, now_lines: b.length };
 }
 
