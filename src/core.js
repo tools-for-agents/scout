@@ -245,10 +245,13 @@ export async function fetchUrl(url, { fresh = false, max_tokens = 6000, raw = fa
 // ── read-only "reading room" views (serve the cache; never hit the network) ────
 export function library({ k = 1000 } = {}) {
   k = posInt(k, 1000, 10000);
+  const total = get('SELECT COUNT(*) n FROM pages')?.n ?? 0;
   const pages = all(`SELECT url, final_url, title, description, status, html_bytes, md_bytes, fetched_at
                      FROM pages ORDER BY fetched_at DESC LIMIT ?`, k)
     .map((p) => ({ ...p, host: hostOf(p.final_url || p.url), tokens: Math.ceil((p.md_bytes || 0) / 4) }));
-  return { count: pages.length, pages };
+  // `count` is the TRUE size of the cache, not the capped page. Reporting pages.length AS the count was a
+  // silent truncation — the library reads as complete when it is only the newest k. Say the total and the cut.
+  return { count: total, shown: pages.length, truncated: total > pages.length, pages };
 }
 
 export function page(url) {
@@ -391,7 +394,11 @@ export function pageLinks(url, { limit = 60 } = {}) {
 
 export function list({ k = 25 } = {}) {
   k = posInt(k, 25, 1000);
-  return { pages: all(`SELECT url, title, md_bytes, fetched_at FROM pages ORDER BY fetched_at DESC LIMIT ?`, k) };
+  const total = get('SELECT COUNT(*) n FROM pages')?.n ?? 0;
+  const pages = all(`SELECT url, title, md_bytes, fetched_at FROM pages ORDER BY fetched_at DESC LIMIT ?`, k);
+  // scout_list caps at k (default 25). Say how many pages there really are and whether the list was cut, so
+  // an agent with 200 pages of reading history isn't shown 25 rows as if that were the whole of it.
+  return { count: total, shown: pages.length, truncated: total > pages.length, pages };
 }
 
 // Re-read a page you already have. A cache is only worth trusting if you can ask

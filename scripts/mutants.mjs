@@ -131,6 +131,12 @@ const CANARIES = [
     find: "    UND_ERR_SOCKET: 'the connection dropped before the page finished downloading — the response is incomplete; try again',",
     into: "    UND_ERR_SOCKET: 'terminated',",
   },
+  {
+    why: 'scout_list reports the TRUE page total and flags a truncated history — returning the capped page length as the count is a silent truncation, so an agent with 200 pages of reading history sees 25 rows as if that were all of it',
+    file: 'src/core.js',
+    find: "  // an agent with 200 pages of reading history isn't shown 25 rows as if that were the whole of it.\n  return { count: total, shown: pages.length, truncated: total > pages.length, pages };",
+    into: "  // an agent with 200 pages of reading history isn't shown 25 rows as if that were the whole of it.\n  return { count: pages.length, shown: pages.length, truncated: false, pages };",
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,

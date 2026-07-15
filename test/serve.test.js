@@ -63,6 +63,20 @@ test('list/library coerce a bad count — no crash at the LIMIT bind, no dumping
     assert.equal(list({ k: bad }).pages.length, 25, `list k=${String(bad)} → the default 25`);
   }
   assert.doesNotThrow(() => library({ k: NaN }), 'library survives a NaN k');
+
+  // 30+ pages exist, but list caps at 25 — it must SAY there are more, not show 25 rows as the whole history.
+  const capped = list({ k: 25 });
+  assert.equal(capped.pages.length, 25, 'the page list is capped');
+  assert.ok(capped.count >= 30, 'but count is the TRUE total, not the capped page length');
+  assert.equal(capped.shown, 25, 'shown is how many rows came back');
+  assert.equal(capped.truncated, true, 'and truncated says the history was cut');
+  // library reports the same true total and flags its own cut
+  const lib = library({ k: 5 });
+  assert.ok(lib.count >= 30 && lib.truncated === true, 'library count is the true total, and it says it was cut');
+  // over-fire guard: an un-capped list does not cry truncation
+  const full = list({ k: 1000 });
+  assert.equal(full.truncated, false, 'a full list is not marked truncated');
+  assert.equal(full.shown, full.count, 'shown equals the total when nothing was cut');
 });
 
 test('search finds a page in any script — the cache is unicode61, so the query must be too', () => {
