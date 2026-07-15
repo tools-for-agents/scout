@@ -463,8 +463,13 @@ test('a redirect loop is named as terminal — not passed through as "redirect c
   t.after(() => srv.close());
   const base = `http://127.0.0.1:${srv.address().port}`;
 
+  // The timeout is a SAFETY NET, not the thing under test — this case asserts undici's ~20-redirect cap
+  // fires ("redirect count exceeded"), which takes ~20 localhost round-trips. Under CPU load (several
+  // mutants gates at once) those 20 hops crept past a 5s timeout, so the AbortSignal won the race and the
+  // test saw "no response within 5000ms" instead: a coin-toss (the Cycle-89 class). A generous timeout lets
+  // the redirect-count limit win deterministically; the fast path still throws after ~20 hops, not 30s.
   await assert.rejects(
-    () => fetchUrl(`${base}/loop`, { fresh: true, timeout: 5000 }),
+    () => fetchUrl(`${base}/loop`, { fresh: true, timeout: 30000 }),
     (err) => {
       assert.match(err.message, /could not fetch/i, 'it names the action that failed');
       assert.match(err.message, /redirect loop|redirects too many times/i, 'and names the cause as a redirect problem');
