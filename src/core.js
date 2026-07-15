@@ -95,25 +95,46 @@ const maxBytes = () => Math.max(1, +process.env.SCOUT_MAX_BYTES || 5_000_000);
 // match; where the porter tokenizer matched by stem and no literal window exists, the hit says so
 // rather than pass its head off as the matching passage.
 const SNIPPET_MAX = 64 * 1024; // bounds snippet() at ~30ms worst case; every real page is far below
-async function readCapped(res, charset) {
+// A byte-order mark is a DEFINITIVE encoding declaration — it outranks anything the markup says.
+const bomCharset = (buf) => (buf.length >= 3 && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) ? 'utf-8'
+  : (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) ? 'utf-16le'
+    : (buf.length >= 2 && buf[0] === 0xFE && buf[1] === 0xFF) ? 'utf-16be' : null;
+
+// Many legacy/regional pages declare their encoding ONLY in the markup, not the HTTP header:
+// <meta charset="shift_jis"> or the old <meta http-equiv="Content-Type" content="…; charset=…">.
+// Scan the first bytes as latin1 (every byte maps, so the scan itself can never be mojibake) for it.
+// The HTML spec caps this pre-scan at 1024 bytes; 2KB is slack for a fat <head>.
+const metaCharset = (buf) => {
+  const head = Buffer.from(buf.subarray(0, 2048)).toString('latin1');
+  return /<meta[^>]+charset\s*=\s*["']?\s*([\w:.-]+)/i.exec(head)?.[1]?.toLowerCase() || null;
+};
+
+async function readCapped(res, headerCharset) {
   if (!res.body) return { text: await res.text(), capped: false };
   const cap = maxBytes();
   const reader = res.body.getReader();
-  // Decode in the charset the server declared. Unknown or absent → UTF-8 (the modern default). An
-  // UNKNOWN label makes `new TextDecoder(label)` THROW, so a weird/typo'd charset must degrade to
-  // UTF-8, never crash the fetch. TextDecoder is non-fatal by default (a bad byte → U+FFFD), which
-  // is what we want — a single bad byte should not sink the whole page.
-  let dec;
-  try { dec = new TextDecoder(charset || 'utf-8'); } catch { dec = new TextDecoder('utf-8'); }
-  let text = '', bytes = 0, capped = false;
+  // Buffer the (capped) bytes, THEN decode — because the charset can be declared INSIDE the document
+  // (a <meta> or a BOM), which streaming-decode-as-you-go cannot see until it is too late. Memory is
+  // still bounded by the cap; the old form held the whole decoded string anyway.
+  const chunks = [];
+  let bytes = 0, capped = false;
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) { text += dec.decode(); break; }
+    if (done) break;
+    chunks.push(value);
     bytes += value.byteLength;
-    text += dec.decode(value, { stream: true });          // {stream:true} keeps multi-byte chars whole across chunks
-    if (bytes >= cap) { text += dec.decode(); capped = true; await reader.cancel(); break; }
+    if (bytes >= cap) { capped = true; await reader.cancel(); break; }
   }
-  return { text, capped };
+  let buf = Buffer.concat(chunks);
+  if (buf.length > cap) buf = buf.subarray(0, cap);
+  // Charset precedence, the HTML sniffing order simplified: the HTTP header (authoritative) wins, then
+  // a BOM, then a <meta> in the head, then UTF-8. An UNKNOWN label makes `new TextDecoder(label)`
+  // THROW, so a weird/typo'd charset degrades to UTF-8 and never crashes the fetch. TextDecoder is
+  // non-fatal by default (a bad byte → U+FFFD) — one bad byte must not sink the whole page.
+  const charset = headerCharset || bomCharset(buf) || metaCharset(buf) || 'utf-8';
+  let dec;
+  try { dec = new TextDecoder(charset); } catch { dec = new TextDecoder('utf-8'); }
+  return { text: dec.decode(buf), capped };
 }
 
 function shape(row, max_tokens, fromCache) {

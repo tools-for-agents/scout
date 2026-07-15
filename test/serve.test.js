@@ -548,6 +548,44 @@ test('a non-UTF-8 page is decoded in the charset the server declared, not mojiba
   assert.match(u8.markdown, /café résumé/, 'a UTF-8 page is decoded exactly as before');
 });
 
+// The charset is often declared ONLY in the markup, not the HTTP header — a <meta charset> or a BOM.
+// Header-only detection (the prior fix) left those pages mojibake. Sniff the document too, in the spec's
+// precedence: header > BOM > <meta> > UTF-8 (a higher source overrides a lying lower one).
+test('a charset declared only in <meta> or a BOM is honoured — and the header still outranks both', async (t) => {
+  const { createServer } = await import('node:http');
+  const { fetchUrl } = await import('../src/core.js');
+
+  const bytes = (...parts) => Buffer.concat(parts.map((p) => (Buffer.isBuffer(p) ? p : Buffer.from(p))));
+  const srv = createServer((req, res) => {
+    if (req.url === '/meta-sjis') {          // <meta charset>, header has NO charset — こんにちは in Shift-JIS
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(bytes('<meta charset="shift_jis"><body><p>', Buffer.from([0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd]), '</p>'));
+    }
+    if (req.url === '/meta-httpequiv') {     // old http-equiv form, Latin-1
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(bytes('<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1"><body><p>Caf', Buffer.from([0xE9]), '</p>'));
+    }
+    if (req.url === '/bom-beats-meta') {     // UTF-8 BOM but a LYING <meta latin1> → BOM wins
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(bytes(Buffer.from([0xEF, 0xBB, 0xBF]), '<meta charset="iso-8859-1"><body><p>café bom</p>'));
+    }
+    // header utf-8 but a LYING <meta shift_jis> → the header outranks the markup
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end('<meta charset="shift_jis"><body><p>café header</p>');
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const md = async (p) => (await fetchUrl(`${base}${p}`, { fresh: true, timeout: 5000 })).markdown;
+
+  assert.match(await md('/meta-sjis'), /こんにちは/, 'a <meta charset> Shift-JIS page decodes from the markup declaration');
+  assert.match(await md('/meta-httpequiv'), /Café/, 'the old http-equiv form is honoured too');
+  const bom = await md('/bom-beats-meta');
+  assert.match(bom, /café bom/, 'a BOM outranks a lying <meta>');
+  assert.doesNotMatch(bom, /^﻿|ï»¿/, 'and the BOM itself is not left in the text');
+  assert.match(await md('/header'), /café header/, 'and an HTTP header charset still outranks the markup');
+});
+
 // ── stdout IS the protocol ──────────────────────────────────────────────────────
 // An MCP server speaks newline-delimited JSON-RPC on stdout and NOTHING else.
 //

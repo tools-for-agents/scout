@@ -26,8 +26,14 @@ const CANARIES = [
   {
     why: 'a page is decoded in the charset the SERVER declared — ignore it and a Shift-JIS / Latin-1 page is mojibake for every non-ASCII byte',
     file: 'src/core.js',
-    find: "  try { dec = new TextDecoder(charset || 'utf-8'); } catch { dec = new TextDecoder('utf-8'); }",
+    find: '  try { dec = new TextDecoder(charset); } catch { dec = new TextDecoder(\'utf-8\'); }',
     into: '  dec = new TextDecoder();',
+  },
+  {
+    why: 'the charset is often declared ONLY in the markup (<meta>/BOM), not the header — drop the sniff and every meta-only legacy page is mojibake',
+    file: 'src/core.js',
+    find: "  const charset = headerCharset || bomCharset(buf) || metaCharset(buf) || 'utf-8';",
+    into: "  const charset = headerCharset || 'utf-8';",
   },
   {
     why: 'the LONGEST <article> is the post — the others are teaser cards, and scout must not hand one back',
