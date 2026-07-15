@@ -615,6 +615,42 @@ test('a #fragment does not defeat the cache — page#a and page#b are one entry,
   assert.equal(mine().filter((p) => p.url.includes('/s?')).length, 2, 'distinct query strings are kept separate');
 });
 
+// A read never creates the store (so a tool never litters a directory it was only asked a question in).
+// forget is a WRITE — but forgetting a URL that was never cached, on a machine with no cache at all,
+// must not conjure a .scout/ into existence just to delete nothing. And a real forget must take BOTH the
+// page row and its FTS row, atomically, the way save() writes them.
+test('forget does not litter a store into existence, and it removes both the page and its FTS row', async (t) => {
+  const { spawnSync } = await import('node:child_process');
+  const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join: pjoin } = await import('node:path');
+  const { createServer } = await import('node:http');
+  const { fetchUrl, forget, search, library } = await import('../src/core.js');
+
+  // 1) forget on a cacheless machine must create NOTHING.
+  const fresh = mkdtempSync(pjoin(tmpdir(), 'scout-forget-'));
+  t.after(() => rmSync(fresh, { recursive: true, force: true }));
+  const out = spawnSync('node', ['src/cli.js', 'forget', 'https://example.com/never-cached'],
+    { encoding: 'utf8', env: { ...process.env, SCOUT_DB: pjoin(fresh, '.scout', 'cache.db') } });
+  assert.ok(!existsSync(pjoin(fresh, '.scout')), 'forgetting an uncached URL created no store — no litter');
+  assert.match(out.stdout + out.stderr, /"forgotten":\s*false/, 'and it reports nothing was forgotten');
+
+  // 2) a real cached page: forget takes it out of the reading room AND search.
+  const srv = createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<title>Forgettable</title><body><article><h1>Forgettable</h1><p>zzforgetprobe is a unique word ' +
+      'in a body long enough to survive readability and land in the FTS index for this test to mean something.</p>' +
+      '</article></body>'); });
+  await new Promise((res) => srv.listen(0, '127.0.0.1', res));
+  t.after(() => srv.close());
+  const url = `http://127.0.0.1:${srv.address().port}/p`;
+  await fetchUrl(url, { fresh: true });
+  assert.ok(search('zzforgetprobe').results.some((h) => h.url === url), 'precondition: the page IS searchable before forget');
+  assert.equal(forget(url).forgotten, true, 'a cached page is forgotten');
+  assert.equal(library().pages.filter((p) => p.url === url).length, 0, 'gone from the reading room');
+  assert.equal(search('zzforgetprobe').results.filter((h) => h.url === url).length, 0, 'and gone from search — the FTS row went too');
+  assert.equal(forget(url).forgotten, false, 'forgetting it again forgets nothing more — idempotent');
+});
+
 // ── stdout IS the protocol ──────────────────────────────────────────────────────
 // An MCP server speaks newline-delimited JSON-RPC on stdout and NOTHING else.
 //

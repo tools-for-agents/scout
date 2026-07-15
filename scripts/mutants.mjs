@@ -24,6 +24,12 @@ import { spawnSync } from 'node:child_process';
 
 const CANARIES = [
   {
+    why: 'forget must not LITTER — with nothing to forget it must return before any run() (which opens create=true), or forgetting an uncached URL conjures a .scout/ store into existence',
+    file: 'src/core.js',
+    find: '  if (n === 0) return { url, forgotten: false };',
+    into: '  if (false) return { url, forgotten: false };',
+  },
+  {
     why: 'a #fragment is client-side only — keep it in the cache key and every section deep-link re-fetches the page and lists one article as many rows',
     file: 'src/core.js',
     find: "s.replace(/#.*$/, '')",

@@ -423,10 +423,20 @@ export async function reread(url, { timeout = 20000 } = {}) {
 
 export function forget(url) {
   url = normUrl(url);
+  // A read never creates the store (Cycle: stop the tools littering every directory they are asked a
+  // question in). forget is a WRITE, but forgetting a URL that was never cached — on a machine with no
+  // cache at all — must not litter a .scout/ into existence just to delete nothing. `get()` opens
+  // READ-ONLY (no create), so an uncached URL falls through here as n===0 and returns BEFORE any
+  // `run()` (which opens create=true and would conjure the store). ONE guard does it; two would be
+  // redundant (a canary on either survives, because the other still covers it).
   const n = get('SELECT COUNT(*) n FROM pages WHERE url=?', url)?.n ?? 0;
-  run('DELETE FROM pages WHERE url=?', url);
-  run('DELETE FROM pages_fts WHERE url=?', url);
-  return { url, forgotten: n > 0 };
+  if (n === 0) return { url, forgotten: false };
+  // Delete the page row and its FTS row TOGETHER — the same way save() writes them (see `atomically`).
+  atomically(() => {
+    run('DELETE FROM pages WHERE url=?', url);
+    run('DELETE FROM pages_fts WHERE url=?', url);
+  });
+  return { url, forgotten: true };
 }
 
 // A read no longer CREATES the store — that fix stopped the tools littering every
