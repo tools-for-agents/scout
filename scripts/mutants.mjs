@@ -32,8 +32,8 @@ const CANARIES = [
   {
     why: 'a dead URL names its cause — "fetch failed" is three words that name nothing and suggest nothing',
     file: 'src/core.js',
-    find: "      ENOTFOUND: 'no such host — check the domain, or you may be offline',",
-    into: "      ENOTFOUND: 'fetch failed',",
+    find: "    ENOTFOUND: 'no such host — check the domain, or you may be offline',",
+    into: "    ENOTFOUND: 'fetch failed',",
   },
   {
     why: 'a READ must never bring the store into being — asking a question left a .scout/ behind',
@@ -94,6 +94,12 @@ const CANARIES = [
     file: 'src/cli.js',
     find: '    if (r.error) {',
     into: '    if (false) {',
+  },
+  {
+    why: 'a connection that DROPS mid-download must be NAMED — a bare "terminated" that bypasses the error mapping hands an agent half a page with no sign it is half',
+    file: 'src/core.js',
+    find: "    UND_ERR_SOCKET: 'the connection dropped before the page finished downloading — the response is incomplete; try again',",
+    into: "    UND_ERR_SOCKET: 'terminated',",
   },
 ];
 

@@ -16,35 +16,47 @@ const localDay = (iso) => { const d = new Date(iso); return Number.isNaN(+d) ? '
 const posInt = (v, def, max) => (Number.isFinite(+v) && +v > 0 ? Math.min(Math.floor(+v), max) : def);
 const normUrl = (u) => { let s = String(u || '').trim(); if (!/^https?:\/\//i.test(s)) s = 'https://' + s; return s; };
 
+// `fetch failed` / `terminated`. That is the whole message Node gives you, and it is the whole
+// message an agent used to get: a word that names no cause, suggests no action, and cannot be told
+// apart from a typo, a dead host, a DNS failure, or no network at all. Its next move is to guess. An
+// error an agent cannot act on is an error you have not finished writing — so say WHICH it was.
+function fetchError(url, timeout, e) {
+  const code = e.cause?.code || e.code || '';
+  const why = {
+    ENOTFOUND: 'no such host — check the domain, or you may be offline',
+    EAI_AGAIN: 'DNS lookup failed — you may be offline',
+    ECONNREFUSED: 'the host refused the connection — nothing is listening there',
+    ECONNRESET: 'the host closed the connection',
+    // 🔑 UND_ERR_SOCKET is `terminated`: the socket closed WHILE the body was still downloading.
+    // Raw, an agent sees only "terminated" — and worse, it used to bypass this whole mapper because
+    // the body was read OUTSIDE the try/catch (see below). The page you got is INCOMPLETE, which is
+    // the one thing the caller must know before it reasons about half a document.
+    UND_ERR_SOCKET: 'the connection dropped before the page finished downloading — the response is incomplete; try again',
+    CERT_HAS_EXPIRED: "the site's TLS certificate has expired",
+    UNABLE_TO_VERIFY_LEAF_SIGNATURE: "the site's TLS certificate could not be verified",
+  }[code] || (e.name === 'TimeoutError' || /abort/i.test(e.name)
+    ? `no response within ${timeout}ms`
+    : (/terminated/i.test(e.message) ? 'the connection dropped before the page finished downloading — the response is incomplete; try again'
+      : (e.cause?.message || e.message || 'the request failed')));
+  return new Error(`could not fetch ${url} — ${why}${code ? ` (${code})` : ''}`);
+}
+
 async function httpGet(url, timeout) {
-  let res;
+  // The body read is INSIDE the try, on purpose. It used to be outside — so a connection that dropped
+  // mid-download threw a bare "terminated" that skipped fetchError entirely, undoing the whole point
+  // of naming fetch failures. A response is not received until its body is; the failure window covers
+  // both.
   try {
-    res = await fetch(url, {
+    const res = await fetch(url, {
       redirect: 'follow',
       headers: { 'user-agent': 'scout/0.1 (+github.com/tools-for-agents)', accept: 'text/html,application/xhtml+xml,*/*' },
       signal: AbortSignal.timeout(timeout),
     });
+    const body = await readCapped(res);
+    return { status: res.status, finalUrl: res.url || url, contentType: res.headers.get('content-type') || '', ...body };
   } catch (e) {
-    // `fetch failed`. That is the whole message Node gives you, and it is the whole
-    // message an agent used to get: three words that name no cause, suggest no action,
-    // and cannot be told apart from a typo, a dead host, a DNS failure, or no network at
-    // all. Its next move is to guess. An error an agent cannot act on is an error you
-    // have not finished writing — so say WHICH of those it was.
-    const code = e.cause?.code || e.code || '';
-    const why = {
-      ENOTFOUND: 'no such host — check the domain, or you may be offline',
-      EAI_AGAIN: 'DNS lookup failed — you may be offline',
-      ECONNREFUSED: 'the host refused the connection — nothing is listening there',
-      ECONNRESET: 'the host closed the connection',
-      CERT_HAS_EXPIRED: "the site's TLS certificate has expired",
-      UNABLE_TO_VERIFY_LEAF_SIGNATURE: "the site's TLS certificate could not be verified",
-    }[code] || (e.name === 'TimeoutError' || /abort/i.test(e.name)
-      ? `no response within ${timeout}ms`
-      : (e.cause?.message || e.message || 'the request failed'));
-    throw new Error(`could not fetch ${url} — ${why}${code ? ` (${code})` : ''}`);
+    throw fetchError(url, timeout, e);
   }
-  return { status: res.status, finalUrl: res.url || url, contentType: res.headers.get('content-type') || '',
-    ...(await readCapped(res)) };
 }
 
 // The most a single page may pour into memory and the cache. `res.text()` buffers the WHOLE

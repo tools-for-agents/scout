@@ -808,3 +808,48 @@ test('an UNREADABLE cache is not an empty one — the CLI must not print "undefi
     assert.match(out, /re-fetch|delete/i, 'and what to do about it');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('a connection that DROPS mid-download is named — not the bare word "terminated"', async () => {
+  // A truncation is not a 404 and not a dead host: the page STARTED arriving and the socket closed
+  // before it finished, so what you have is HALF a document. Node throws a bare "terminated" for this
+  // (UND_ERR_SOCKET), and it used to reach the agent unmapped — worse, it bypassed scout's whole
+  // fetch-error naming, because the body was read OUTSIDE the try/catch. "terminated" names no cause
+  // and suggests no action; and an agent that reasons about half a page as if it were whole is worse
+  // off than one that knows the page is incomplete.
+  const { createServer } = await import('node:http');
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join: pjoin } = await import('node:path');
+
+  // A server that promises a big body, sends a fraction, then destroys the socket mid-stream.
+  const srv = createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html', 'content-length': '100000' });
+    res.write('<html><body>' + 'x'.repeat(1000));
+    setTimeout(() => { try { res.socket.destroy(); } catch {} }, 30);
+  });
+  await new Promise((r) => srv.listen(0, r));
+  const url = `http://127.0.0.1:${srv.address().port}/page`;
+
+  const dir = mkdtempSync(pjoin(tmpdir(), 'scout-trunc-'));
+  const { fetchUrl } = await import('../src/core.js');
+  const saved = process.env.SCOUT_DB;
+  process.env.SCOUT_DB = pjoin(dir, 'cache.db');
+  try {
+    let msg = '';
+    try { await fetchUrl(url); assert.fail('a truncated download must not resolve as a whole page'); }
+    catch (e) { msg = e.message; }
+
+    assert.match(msg, /could not fetch/i, 'it goes through the error naming — not a bare throw');
+    assert.match(msg, /incomplete|dropped|finished downloading/i, 'it says the page is INCOMPLETE, not just "terminated"');
+    assert.doesNotMatch(msg, /^terminated$/, 'never the bare word Node hands up');
+
+    // And the truncated page must NOT be in the cache — a half-page answered as whole forever is the
+    // confident-wrong-answer this whole class is about.
+    const { list } = await import('../src/core.js');
+    assert.equal(list({ k: 50 }).pages.filter((p) => p.url === url).length, 0, 'a failed fetch caches nothing');
+  } finally {
+    if (saved === undefined) delete process.env.SCOUT_DB; else process.env.SCOUT_DB = saved;
+    srv.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
