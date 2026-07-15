@@ -67,6 +67,13 @@ test('extractLinks returns absolute, de-duplicated http links with text', () => 
 test('decodeEntities decodes named and numeric entities', () => {
   assert.equal(decodeEntities('a &amp; b &lt;c&gt; &#65; &#x42;'), 'a & b <c> A B');
   assert.equal(decodeEntities('&mdash;&hellip;'), '—…');
+  // `in` walked the prototype chain, so `&constructor;` / `&toString;` / `&valueOf;` (any Object.prototype
+  // method name) matched and were "decoded" to that function's SOURCE — "function Object() { [native code] }"
+  // — injected into the markdown of every fetched page. They are NOT entities; leave them as literal text.
+  assert.equal(decodeEntities('the &constructor; and &toString; and &valueOf; here'),
+    'the &constructor; and &toString; and &valueOf; here');
+  assert.equal(decodeEntities('&hasOwnProperty; &isPrototypeOf;'), '&hasOwnProperty; &isPrototypeOf;');
+  assert.equal(decodeEntities('&amp;&toString;'), '&&toString;', 'a real entity still decodes beside a prototype name');
 });
 
 // A REAL PAGE HAS MORE THAN ONE <article>. A blog post sits among "related" teaser cards,

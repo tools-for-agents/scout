@@ -14,7 +14,10 @@ export function decodeEntities(s) {
       const n = code[1] === 'x' || code[1] === 'X' ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
       try { return Number.isFinite(n) ? String.fromCodePoint(n) : m; } catch { return m; }
     }
-    return code in NAMED ? NAMED[code] : m;
+    // Object.hasOwn, NOT `in`: `in` walks the prototype chain, so `&constructor;` / `&toString;` /
+    // `&valueOf;` (any Object.prototype method name) matched and got "decoded" to that function's SOURCE
+    // — "function Object() { [native code] }" — injected into the markdown of every fetched page.
+    return Object.hasOwn(NAMED, code) ? NAMED[code] : m;
   });
 }
 

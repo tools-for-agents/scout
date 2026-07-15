@@ -137,6 +137,12 @@ const CANARIES = [
     find: "  // an agent with 200 pages of reading history isn't shown 25 rows as if that were the whole of it.\n  return { count: total, shown: pages.length, truncated: total > pages.length, pages };",
     into: "  // an agent with 200 pages of reading history isn't shown 25 rows as if that were the whole of it.\n  return { count: pages.length, shown: pages.length, truncated: false, pages };",
   },
+  {
+    why: 'HTML entities are decoded by OWN-property lookup, not `in` — `in` walks the prototype chain, so `&constructor;`/`&toString;`/`&valueOf;` matched and got replaced with that function\'s SOURCE ("function Object() { [native code] }") in the markdown of every fetched page',
+    file: 'src/extract.js',
+    find: '    return Object.hasOwn(NAMED, code) ? NAMED[code] : m;',
+    into: '    return code in NAMED ? NAMED[code] : m;',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,
