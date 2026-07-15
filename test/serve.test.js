@@ -424,6 +424,47 @@ test('a fetch that fails says WHY, so an agent can do something about it', async
   assert.match(m2, /ENOTFOUND/, 'and keeps the code, for anyone who wants it');
 });
 
+// ── a redirect loop / an endless chain is a fetch that never arrives ─────────────
+// fetch FOLLOWS redirects but caps at ~20 hops and throws. The raw cause is undici's
+// internal "redirect count exceeded" — scout only ever read it because that phrase
+// happens to be English, with no explicit case (the Cycle-95 fragility, one redirect
+// over): a Node reword would silently degrade it, and it never told the agent this is
+// TERMINAL. Name it deliberately; and never over-fire on an ordinary redirect.
+test('a redirect loop is named as terminal — not passed through as "redirect count exceeded"', async (t) => {
+  const { createServer } = await import('node:http');
+  const { fetchUrl } = await import('../src/core.js');
+
+  const srv = createServer((req, res) => {
+    const u = req.url;
+    if (u === '/loop')  { res.writeHead(302, { Location: '/loopb' }); return res.end(); }
+    if (u === '/loopb') { res.writeHead(302, { Location: '/loop'  }); return res.end(); }
+    if (u === '/hop')   { res.writeHead(302, { Location: '/dest'  }); return res.end(); } // one honest redirect
+    if (u === '/dest')  { res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end('<html><head><title>Arrived</title></head><body><h1>Arrived</h1><p>Got here after one hop.</p></body></html>'); }
+    res.writeHead(404); res.end();
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.address().port}`;
+
+  await assert.rejects(
+    () => fetchUrl(`${base}/loop`, { fresh: true, timeout: 5000 }),
+    (err) => {
+      assert.match(err.message, /could not fetch/i, 'it names the action that failed');
+      assert.match(err.message, /redirect loop|redirects too many times/i, 'and names the cause as a redirect problem');
+      assert.match(err.message, /will not help|cannot be reached/i, 'and says it is terminal — do not just retry the same URL');
+      assert.doesNotMatch(err.message, /redirect count exceeded/i, 'and never passes through undici’s raw internal phrase');
+      return true;
+    },
+  );
+
+  // The over-fire guard: an ORDINARY single redirect must still be followed to the page,
+  // not mistaken for the pathology (Node follows up to ~20; one hop is nothing).
+  const ok = await fetchUrl(`${base}/hop`, { fresh: true, timeout: 5000 });
+  assert.equal(ok.title, 'Arrived', 'a normal redirect is followed through to the page');
+  assert.match(ok.markdown, /Got here after one hop/, 'and its body comes back as markdown');
+});
+
 // ── stdout IS the protocol ──────────────────────────────────────────────────────
 // An MCP server speaks newline-delimited JSON-RPC on stdout and NOTHING else.
 //

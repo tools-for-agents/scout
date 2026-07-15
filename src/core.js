@@ -22,6 +22,7 @@ const normUrl = (u) => { let s = String(u || '').trim(); if (!/^https?:\/\//i.te
 // error an agent cannot act on is an error you have not finished writing — so say WHICH it was.
 function fetchError(url, timeout, e) {
   const code = e.cause?.code || e.code || '';
+  const causeMsg = e.cause?.message || '';
   const why = {
     ENOTFOUND: 'no such host — check the domain, or you may be offline',
     EAI_AGAIN: 'DNS lookup failed — you may be offline',
@@ -36,8 +37,15 @@ function fetchError(url, timeout, e) {
     UNABLE_TO_VERIFY_LEAF_SIGNATURE: "the site's TLS certificate could not be verified",
   }[code] || (e.name === 'TimeoutError' || /abort/i.test(e.name)
     ? `no response within ${timeout}ms`
-    : (/terminated/i.test(e.message) ? 'the connection dropped before the page finished downloading — the response is incomplete; try again'
-      : (e.cause?.message || e.message || 'the request failed')));
+    // fetch FOLLOWS redirects, but stops after ~20 hops and throws. The raw cause is undici's
+    // internal "redirect count exceeded" — whose exact wording has drifted across Node versions,
+    // so scout only read it because that phrase happens to be English (the Cycle-95 fragility, one
+    // redirect over). Name it deliberately, and say it is TERMINAL: a loop (A→B→A) or an over-long
+    // chain does the same thing on a retry, so an agent must not just try the same URL again.
+    : (/redirect count exceeded|too many redirect|maximum redirect|redirected too many/i.test(causeMsg)
+      ? 'this URL redirects too many times — likely a redirect loop or a broken redirect chain; the page cannot be reached, and retrying the same URL will not help'
+      : (/terminated/i.test(e.message) ? 'the connection dropped before the page finished downloading — the response is incomplete; try again'
+        : (e.cause?.message || e.message || 'the request failed'))));
   return new Error(`could not fetch ${url} — ${why}${code ? ` (${code})` : ''}`);
 }
 
