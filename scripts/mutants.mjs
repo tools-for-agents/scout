@@ -24,6 +24,12 @@ import { spawnSync } from 'node:child_process';
 
 const CANARIES = [
   {
+    why: 'a #fragment is client-side only — keep it in the cache key and every section deep-link re-fetches the page and lists one article as many rows',
+    file: 'src/core.js',
+    find: "s.replace(/#.*$/, '')",
+    into: 's',
+  },
+  {
     why: 'a page is decoded in the charset the SERVER declared — ignore it and a Shift-JIS / Latin-1 page is mojibake for every non-ASCII byte',
     file: 'src/core.js',
     find: '  try { dec = new TextDecoder(charset); } catch { dec = new TextDecoder(\'utf-8\'); }',

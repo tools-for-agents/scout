@@ -14,7 +14,11 @@ const localDay = (iso) => { const d = new Date(iso); return Number.isNaN(+d) ? '
 // Raw, a bad value THROWS at the SQLite `LIMIT ?` bind ("datatype mismatch"), makes `LIMIT -1` return
 // the WHOLE table, or makes extractLinks' `out.length < NaN` return nothing — all silent-wrong answers.
 const posInt = (v, def, max) => (Number.isFinite(+v) && +v > 0 ? Math.min(Math.floor(+v), max) : def);
-const normUrl = (u) => { let s = String(u || '').trim(); if (!/^https?:\/\//i.test(s)) s = 'https://' + s; return s; };
+// Strip the #fragment: it is CLIENT-SIDE ONLY — never sent to the server — so `page#a` and `page#b`
+// are the exact same fetched resource. Keeping it in the cache key defeated the cache (each section
+// deep-link re-fetched the whole page) and listed one article as many rows in the reading room. A
+// literal '#' in a path/query is percent-encoded (%23), so only the real fragment is removed.
+const normUrl = (u) => { let s = String(u || '').trim(); if (!/^https?:\/\//i.test(s)) s = 'https://' + s; return s.replace(/#.*$/, ''); };
 
 // `fetch failed` / `terminated`. That is the whole message Node gives you, and it is the whole
 // message an agent used to get: a word that names no cause, suggests no action, and cannot be told

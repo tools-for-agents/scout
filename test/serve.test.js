@@ -586,6 +586,35 @@ test('a charset declared only in <meta> or a BOM is honoured — and the header 
   assert.match(await md('/header'), /café header/, 'and an HTTP header charset still outranks the markup');
 });
 
+// A #fragment is client-side only — never sent to the server — so page#a and page#b are the SAME
+// fetched resource. Keeping it in the cache key re-fetched the whole page for every section deep-link
+// and listed one article as many rows in the reading room.
+test('a #fragment does not defeat the cache — page#a and page#b are one entry, but ?q=a and ?q=b are two', async (t) => {
+  const { createServer } = await import('node:http');
+  const { fetchUrl, library } = await import('../src/core.js');
+
+  let hits = 0;
+  const srv = createServer((req, res) => { hits++; res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<title>t</title><body><p>body of ' + req.url + '</p></body>'); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.address().port}`;
+
+  await fetchUrl(`${base}/article#section-1`, { fresh: true });
+  const second = await fetchUrl(`${base}/article#section-2`);   // not fresh — must hit the cache
+  assert.equal(second.from_cache, true, 'a different #fragment of the same page is served from cache');
+  assert.equal(hits, 1, 'the server was hit once, not once per section');
+  // Scoped to THIS server's unique port — serve.test.js shares one cache DB across all tests.
+  const mine = () => library().pages.filter((p) => p.url.startsWith(base));
+  assert.equal(mine().filter((p) => p.url.endsWith('/article')).length, 1, 'the reading room lists the article ONCE, not per-fragment');
+  assert.equal(mine().some((p) => p.url.includes('#')), false, 'and no reading-room URL carries a #fragment');
+
+  // Over-fire guard: the query string IS part of the resource — different queries stay distinct.
+  await fetchUrl(`${base}/s?q=cats`, { fresh: true });
+  await fetchUrl(`${base}/s?q=dogs`, { fresh: true });
+  assert.equal(mine().filter((p) => p.url.includes('/s?')).length, 2, 'distinct query strings are kept separate');
+});
+
 // ── stdout IS the protocol ──────────────────────────────────────────────────────
 // An MCP server speaks newline-delimited JSON-RPC on stdout and NOTHING else.
 //
