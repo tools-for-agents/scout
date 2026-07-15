@@ -502,6 +502,52 @@ test('a 404/500 error page is flagged as an error, not handed back as the articl
   assert.match(ok.markdown, /actual content an agent came here to read/, 'just the content');
 });
 
+// ── a page is not always UTF-8 ───────────────────────────────────────────────────
+// scout decoded every response as UTF-8. A Shift-JIS / GBK / Latin-1 page — legacy and regional
+// sites still serve millions — then came back as mojibake for every non-ASCII byte, and the
+// Content-Type header said which encoding it actually was the whole time.
+test('a non-UTF-8 page is decoded in the charset the server declared, not mojibake', async (t) => {
+  const { createServer } = await import('node:http');
+  const { fetchUrl } = await import('../src/core.js');
+
+  const srv = createServer((req, res) => {
+    if (req.url === '/latin1') {
+      // "Café résumé naïve" in ISO-8859-1: é=0xE9, ï=0xEF — NOT valid UTF-8.
+      res.writeHead(200, { 'content-type': 'text/html; charset=iso-8859-1' });
+      return res.end(Buffer.concat([Buffer.from('<title>t</title><body><p>Caf'), Buffer.from([0xE9]),
+        Buffer.from(' r'), Buffer.from([0xE9]), Buffer.from('sum'), Buffer.from([0xE9]),
+        Buffer.from(' na'), Buffer.from([0xEF]), Buffer.from('ve</p>')]));
+    }
+    if (req.url === '/sjis') {   // こんにちは in Shift-JIS
+      res.writeHead(200, { 'content-type': 'text/html; charset=shift_jis' });
+      return res.end(Buffer.concat([Buffer.from('<title>t</title><body><p>'),
+        Buffer.from([0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd]), Buffer.from('</p>')]));
+    }
+    if (req.url === '/bogus') {  // an unknown charset label must NOT crash the fetch — fall back to UTF-8
+      res.writeHead(200, { 'content-type': 'text/html; charset=x-made-up-9000' });
+      return res.end('<title>t</title><body><p>bogus charset still returns</p>');
+    }
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });   // /utf8: unaffected
+    res.end('<title>t</title><body><p>utf8 café résumé</p>');
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.address().port}`;
+
+  const l1 = await fetchUrl(`${base}/latin1`, { fresh: true, timeout: 5000 });
+  assert.match(l1.markdown, /Café résumé naïve/, 'a Latin-1 page decodes to the real accented text');
+  assert.doesNotMatch(l1.markdown, /�/, 'and carries no replacement characters');
+
+  const sj = await fetchUrl(`${base}/sjis`, { fresh: true, timeout: 5000 });
+  assert.match(sj.markdown, /こんにちは/, 'a Shift-JIS page decodes to the real Japanese text');
+
+  // Over-fire guards: an unknown charset must fall back (not throw), and UTF-8 is unchanged.
+  const bg = await fetchUrl(`${base}/bogus`, { fresh: true, timeout: 5000 });
+  assert.match(bg.markdown, /bogus charset still returns/, 'an unknown charset falls back to UTF-8, never crashes');
+  const u8 = await fetchUrl(`${base}/utf8`, { fresh: true, timeout: 5000 });
+  assert.match(u8.markdown, /café résumé/, 'a UTF-8 page is decoded exactly as before');
+});
+
 // ── stdout IS the protocol ──────────────────────────────────────────────────────
 // An MCP server speaks newline-delimited JSON-RPC on stdout and NOTHING else.
 //

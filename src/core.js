@@ -49,6 +49,11 @@ function fetchError(url, timeout, e) {
   return new Error(`could not fetch ${url} — ${why}${code ? ` (${code})` : ''}`);
 }
 
+// The character encoding the server declared, e.g. "text/html; charset=Shift_JIS" → "shift_jis".
+// A page decoded in the wrong charset is mojibake for every non-ASCII byte, and the header is the
+// authoritative place the encoding is stated. Absent → null (readCapped falls back to UTF-8).
+const charsetOf = (contentType) => (/charset\s*=\s*["']?([\w:.-]+)/i.exec(contentType || '')?.[1] || '').toLowerCase() || null;
+
 async function httpGet(url, timeout) {
   // The body read is INSIDE the try, on purpose. It used to be outside — so a connection that dropped
   // mid-download threw a bare "terminated" that skipped fetchError entirely, undoing the whole point
@@ -60,8 +65,9 @@ async function httpGet(url, timeout) {
       headers: { 'user-agent': 'scout/0.1 (+github.com/tools-for-agents)', accept: 'text/html,application/xhtml+xml,*/*' },
       signal: AbortSignal.timeout(timeout),
     });
-    const body = await readCapped(res);
-    return { status: res.status, finalUrl: res.url || url, contentType: res.headers.get('content-type') || '', ...body };
+    const contentType = res.headers.get('content-type') || '';
+    const body = await readCapped(res, charsetOf(contentType));
+    return { status: res.status, finalUrl: res.url || url, contentType, ...body };
   } catch (e) {
     throw fetchError(url, timeout, e);
   }
@@ -89,11 +95,16 @@ const maxBytes = () => Math.max(1, +process.env.SCOUT_MAX_BYTES || 5_000_000);
 // match; where the porter tokenizer matched by stem and no literal window exists, the hit says so
 // rather than pass its head off as the matching passage.
 const SNIPPET_MAX = 64 * 1024; // bounds snippet() at ~30ms worst case; every real page is far below
-async function readCapped(res) {
+async function readCapped(res, charset) {
   if (!res.body) return { text: await res.text(), capped: false };
   const cap = maxBytes();
   const reader = res.body.getReader();
-  const dec = new TextDecoder();
+  // Decode in the charset the server declared. Unknown or absent → UTF-8 (the modern default). An
+  // UNKNOWN label makes `new TextDecoder(label)` THROW, so a weird/typo'd charset must degrade to
+  // UTF-8, never crash the fetch. TextDecoder is non-fatal by default (a bad byte → U+FFFD), which
+  // is what we want — a single bad byte should not sink the whole page.
+  let dec;
+  try { dec = new TextDecoder(charset || 'utf-8'); } catch { dec = new TextDecoder('utf-8'); }
   let text = '', bytes = 0, capped = false;
   for (;;) {
     const { done, value } = await reader.read();

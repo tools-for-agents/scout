@@ -24,6 +24,12 @@ import { spawnSync } from 'node:child_process';
 
 const CANARIES = [
   {
+    why: 'a page is decoded in the charset the SERVER declared — ignore it and a Shift-JIS / Latin-1 page is mojibake for every non-ASCII byte',
+    file: 'src/core.js',
+    find: "  try { dec = new TextDecoder(charset || 'utf-8'); } catch { dec = new TextDecoder('utf-8'); }",
+    into: '  dec = new TextDecoder();',
+  },
+  {
     why: 'the LONGEST <article> is the post — the others are teaser cards, and scout must not hand one back',
     file: 'src/extract.js',
     find: '  if (arts.length) return arts.sort((a, b) => b.length - a.length)[0];',
