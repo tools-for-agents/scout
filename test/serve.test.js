@@ -854,6 +854,43 @@ test('a SAVE must not make a page VANISH while it is being saved', async () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+// The same guarantee as the race above, but DETERMINISTIC — no timing, no CPU luck.
+// 🔑 The race test only reproduces the vanish window when the searcher happens to run DURING it,
+// and under CI CPU-starvation it did not: the canary SURVIVED in CI while dying locally, TWICE.
+// A canary that only sometimes fires is a gate that only sometimes gates — the exact thing this
+// project refuses to ship. `atomically` takes a callback, so we do not have to RACE the gap: we
+// stand in it. Do save()'s exact FTS rewrite (DELETE then INSERT) inside atomically, and have a
+// SECOND connection read at the split point. WAL gives that reader a snapshot: with a real
+// transaction it sees the OLD entry (still there); with the BEGIN removed the DELETE auto-commits
+// and the reader sees NOTHING — 0 hits for a page that is right there. Fires every run, any hardware.
+test('atomically keeps a save atomic to a concurrent reader — deterministically (the VANISH canary)', async (t) => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const { atomically, run: dbRun } = await import('../src/db.js');
+  const url = 'https://ex.com/atomic-probe';
+  const TOKEN = 'zzatomicprobe';
+  save({ url, title: 'Atomic Page', markdown: `${TOKEN} body text`, html_bytes: 100 });
+
+  // conn B: a SEPARATE connection — the concurrent reader. WAL is already on (the store is open).
+  const connB = new DatabaseSync(process.env.SCOUT_DB);
+  connB.exec('PRAGMA busy_timeout = 5000;');
+  t.after(() => { try { connB.close(); } catch { /* already closed */ } });
+  const readerSees = () => connB.prepare('SELECT COUNT(*) n FROM pages_fts WHERE pages_fts MATCH ?').get(TOKEN).n;
+
+  assert.equal(readerSees(), 1, 'sanity: the reader sees the page before any rewrite');
+
+  let seenAtGap = null;
+  atomically(() => {
+    dbRun('DELETE FROM pages_fts WHERE url=?', url);          // exactly what save() does…
+    seenAtGap = readerSees();                                 // …and the concurrent reader, RIGHT in the gap
+    dbRun('INSERT INTO pages_fts (url,title,markdown) VALUES (?,?,?)', url, 'Atomic Page', `${TOKEN} body text`);
+  });
+
+  assert.equal(seenAtGap, 1,
+    'a reader between the FTS DELETE and INSERT must still see the page — the rewrite is one transaction, '
+    + 'not two separately-committed statements (with BEGIN removed this reads 0: the page vanished mid-save)');
+  assert.equal(readerSees(), 1, 'and it is still there afterwards');
+});
+
 test('an UNREADABLE cache is not an empty one — the CLI must not print "undefined hits"', async () => {
   // The core was HONEST: search() returns { error } when the cache cannot be read. The CLI threw that
   // honesty away — it printed "— undefined hits, ~undefined tokens —" and said nothing else. An agent
