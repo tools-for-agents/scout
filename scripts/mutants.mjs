@@ -143,6 +143,12 @@ const CANARIES = [
     find: '    return Object.hasOwn(NAMED, code) ? NAMED[code] : m;',
     into: '    return code in NAMED ? NAMED[code] : m;',
   },
+  {
+    why: "overview's host tally is prototype-less (Object.create(null)) — a plain {} keyed by host names lets a page under a host named \"constructor\" read the inherited Object function as truthy, so `hosts[h] ||= {…}` never creates the entry and the host vanishes from by_host (and .pages++ mutates the global Object)",
+    file: 'src/core.js',
+    find: '  const hosts = Object.create(null);',
+    into: '  const hosts = {};',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,

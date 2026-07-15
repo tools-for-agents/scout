@@ -485,7 +485,11 @@ export function overview({ top = 8 } = {}) {
   const md_tokens = pages.reduce((a, p) => a + tok(p.md_bytes), 0);
   const saved_tokens = Math.max(0, html_tokens - md_tokens);
 
-  const hosts = {};
+  // Object.create(null): keyed by HOST NAMES from fetched URLs. A plain {} inherits Object.prototype, so a
+  // page under a single-label host named "constructor"/"toString" read that inherited FUNCTION as truthy —
+  // `hosts[h] ||= {…}` then never created the entry (the host vanished from by_host) AND `.pages++` mutated
+  // the GLOBAL Object function. A prototype-less object has no such keys.
+  const hosts = Object.create(null);
   for (const p of pages) {
     const h = hostOf(p.final_url || p.url) || 'web';
     (hosts[h] ||= { host: h, pages: 0, tokens: 0 });

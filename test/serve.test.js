@@ -176,6 +176,19 @@ test('overview: the reading history adds up — tokens saved, hosts, days, heavi
   } finally { if (prevTZ === undefined) delete process.env.TZ; else process.env.TZ = prevTZ; }
 });
 
+test('overview: a host named for an Object.prototype member is counted, not silently dropped', () => {
+  save({ url: 'http://constructor/one', title: 'C1', markdown: 'a', html_bytes: 400 });
+  save({ url: 'http://constructor/two', title: 'C2', markdown: 'b', html_bytes: 400 });
+  const o = overview({ top: 100 });
+  // `hosts` was a plain {} keyed by host names: a host "constructor" read the inherited Object function as
+  // truthy, so `hosts[h] ||= {…}` never created the entry — the host vanished from by_host — and `.pages++`
+  // mutated the GLOBAL Object function.
+  const entry = o.by_host.find((h) => h.host === 'constructor');
+  assert.ok(entry, 'the "constructor" host appears in by_host, not silently dropped');
+  assert.equal(entry.pages, 2, 'with both its pages counted');
+  assert.equal(Object.pages, undefined, 'and the global Object function is not polluted');
+});
+
 test('overview buckets reads by the LOCAL day, not the UTC day', async () => {
   // fetched_at is a UTC timestamp; slicing its first 10 chars put a late-night read on the wrong
   // calendar day for a non-UTC reader. A page read at 23:30Z is "tomorrow" at UTC+14.
