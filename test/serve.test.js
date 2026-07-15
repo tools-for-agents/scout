@@ -465,6 +465,43 @@ test('a redirect loop is named as terminal — not passed through as "redirect c
   assert.match(ok.markdown, /Got here after one hop/, 'and its body comes back as markdown');
 });
 
+// ── a 404 page is not the article ────────────────────────────────────────────────
+// A 4xx/5xx still has a body — usually a friendly HTML error page — and scout converts it
+// to clean markdown like any other. Handed back unqualified, an agent reads "Oops, not
+// found — try our homepage" as if it were the content it asked for. The status is there, in
+// a sibling field it may never look at. Lead the markdown with the truth; leave the body.
+test('a 404/500 error page is flagged as an error, not handed back as the article', async (t) => {
+  const { createServer } = await import('node:http');
+  const { fetchUrl } = await import('../src/core.js');
+
+  const body = (h1, p) => `<!doctype html><html><head><title>${h1}</title></head><body><h1>${h1}</h1><p>${p}</p></body></html>`;
+  const srv = createServer((req, res) => {
+    if (req.url === '/gone') { res.writeHead(404, { 'content-type': 'text/html' });
+      return res.end(body('Page not found', 'Oops! Try our homepage or search.')); }
+    if (req.url === '/boom') { res.writeHead(500, { 'content-type': 'text/html' });
+      return res.end(body('Server error', 'Something went wrong on our end.')); }
+    res.writeHead(200, { 'content-type': 'text/html' });
+    return res.end(body('Real Article', 'The actual content an agent came here to read.'));
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.address().port}`;
+
+  const gone = await fetchUrl(`${base}/gone`, { fresh: true, timeout: 5000 });
+  assert.equal(gone.status, 404, 'the status is preserved');
+  assert.match(gone.markdown.slice(0, 200), /HTTP 404/, 'and the markdown LEADS with the status — not buried in a field');
+  assert.match(gone.markdown, /error page|not the content|Not Found/i, 'and says plainly it is an error page, not the article');
+
+  const boom = await fetchUrl(`${base}/boom`, { fresh: true, timeout: 5000 });
+  assert.match(boom.markdown.slice(0, 200), /HTTP 500/, 'a 500 is flagged the same way');
+
+  // Over-fire guard: a normal 200 must NOT be annotated — the note only appears on real errors.
+  const ok = await fetchUrl(`${base}/ok`, { fresh: true, timeout: 5000 });
+  assert.equal(ok.status, 200);
+  assert.doesNotMatch(ok.markdown, /HTTP \d\d\d|error page/i, 'a 200 gets no error note');
+  assert.match(ok.markdown, /actual content an agent came here to read/, 'just the content');
+});
+
 // ── stdout IS the protocol ──────────────────────────────────────────────────────
 // An MCP server speaks newline-delimited JSON-RPC on stdout and NOTHING else.
 //

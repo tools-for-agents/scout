@@ -186,6 +186,20 @@ export async function fetchUrl(url, { fresh = false, max_tokens = 6000, raw = fa
     markdown = `> [scout read only the first ${size} of this oversized page — the rest was not fetched. `
       + `What follows is the beginning; use scout_search to find within it.]\n\n${markdown}`;
   }
+  // A 4xx/5xx still has a BODY — usually a friendly HTML error page ("Oops, not found — try
+  // our homepage") — and scout will happily convert it to clean markdown. Handed back
+  // unqualified, an agent reads the error page's prose as if it were the article it asked for:
+  // a confident wrong answer, with only the sibling `status` field to say otherwise. Lead with
+  // the truth so it survives the token cut and cannot be missed (the same move as the binary
+  // and oversized notes). scout ANNOTATES rather than refuses — the body stays available for
+  // anyone debugging the error itself.
+  if (r.status >= 400) {
+    const reason = { 400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found',
+      408: 'Request Timeout', 410: 'Gone', 429: 'Too Many Requests', 500: 'Internal Server Error',
+      502: 'Bad Gateway', 503: 'Service Unavailable', 504: 'Gateway Timeout' }[r.status] || 'error';
+    markdown = `> [scout got HTTP ${r.status} ${reason} from ${url} — this is the server's ERROR page, `
+      + `NOT the content you asked for. Do not treat the text below as the page's real content.]\n\n${markdown}`;
+  }
 
   save({ url, final_url: r.finalUrl, title, description, markdown, content_type: r.contentType,
     status: r.status, html_bytes: r.text.length, md_bytes: markdown.length });
