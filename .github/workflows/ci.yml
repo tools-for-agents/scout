@@ -125,7 +125,7 @@ jobs:
           # makes iris report "the state was never reached and NOTHING was audited" instead of quietly
           # grading the list behind it.
           pre: >-
-            await new Promise(r=>setTimeout(r,1500));const card=document.querySelector('[data-url]');if(!card) throw new Error('the seeded cache shows no pages — the journey to the reader starts at a card');card.click();await new Promise(r=>setTimeout(r,1800));const art=document.querySelector('#reader, article');if(!art||!art.textContent.trim()) throw new Error('clicking a card did not put an article in the reader');if(!document.querySelector('.article p, .article h1, .article h2')) throw new Error('the reader opened with no prose in it — that is an empty room, not an article');
+            await new Promise(r=>setTimeout(r,1500));const card=document.querySelector('[data-url]');if(!card) throw new Error('the seeded cache shows no pages — the journey to the reader starts at a card');card.click();await new Promise(r=>setTimeout(r,1800));const art=document.querySelector('#reader, article');if(!art||!art.textContent.trim()) throw new Error('clicking a card did not put an article in the reader');if(!document.querySelector('.article p, .article h1, .article h2')) throw new Error('the reader opened with no prose in it — that is an empty room, not an article');const forget=document.querySelector('.forget');if(!forget) throw new Error('the reader has no forget button to arm');forget.classList.add('armed');const copy=document.querySelector('.copy-md');if(copy) copy.classList.add('ok');
 
   # THE EMPTY STATE IS THE ONE STATE EVERY USER SEES FIRST — AND NOTHING WAS LOOKING AT IT.
   #

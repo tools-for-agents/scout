@@ -23,6 +23,9 @@
        literal #c8553d in both themes: 4.01:1 on this surface, 4.11:1 on paper. A hardcoded colour
        cannot flip with the theme — the third time this exact bug has turned up in this kit. */
     --err:#e8705a;
+    /* the "copied" tick: #5aa15f is 5.57:1 here and 2.96:1 on paper. No ONE green does both — which
+       is the entire argument for a token rather than a literal. */
+    --ok:#5aa15f;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Source Serif Pro","Charter",Georgia,serif;
     --mono:ui-monospace,"SFMono-Regular",Menlo,monospace;
@@ -35,6 +38,7 @@
     --accent:#915700; --accent-soft:#efe6d2; --mark:#6b4906; --mark-bg:rgba(180,122,34,.2);
     --brain:#6d28d9;   /* the same purple, for a light surface */
     --err:#a8321c;   /* the same red, for a light surface */
+    --ok:#33702f;    /* the same tick, for a light surface (5.66:1) */
     --shadow:0 10px 34px rgba(80,60,30,.12);
   }
   @media (prefers-color-scheme: light) {
@@ -50,6 +54,7 @@
          now asserts (C150), found the same day, by forgetting the same thing. */
       --brain:#6d28d9;
       --err:#a8321c;
+      --ok:#33702f;
       --shadow:0 10px 34px rgba(80,60,30,.12);
     }
   }
@@ -242,7 +247,7 @@
   .byline .chip { font-family:var(--mono); font-size:12px; background:var(--surface-2); border:1px solid var(--line); border-radius:12px; padding: 2px 8px; color:var(--muted); }
   .copy-md { margin-left: auto; font-family:var(--mono); font-size:12px; background:var(--surface-2); border:1px solid var(--line); color:var(--muted); border-radius:12px; padding: 4px 12px; cursor:pointer; transition:color .12s, border-color .12s; }
   .copy-md:hover { color:var(--accent); border-color:var(--accent); }
-  .copy-md.ok { color:#5aa15f; border-color:#5aa15f; }
+  .copy-md.ok { color:var(--ok); border-color:var(--ok); }
   /* capture wears cortex's violet, not scout's amber: it is the brain's action */
   /* min-height:24 — the kit declares that as the smallest thing a finger may be asked to hit.
      The colours come from --brain: the ink WAS the literal #8b5cf6, in both themes, at 3.84:1 on
@@ -258,7 +263,10 @@
   .re-read, .forget { font-family:var(--mono); font-size:12px; background:var(--surface-2); border:1px solid var(--line);
     color:var(--muted); border-radius:12px; padding: 4px 12px; cursor:pointer; transition:color .12s, border-color .12s; }
   .re-read:hover { color:var(--accent); border-color:var(--accent); }
-  .forget:hover, .forget.armed { color:#c8553d; border-color:#c8553d; }
+  /* var(--err), not the literal — the SAME #c8553d I tokenised for .fetch-msg.err one commit ago and
+     did not grep for. 4.01:1 on night, 4.11:1 on paper, on the button that is ARMED TO DELETE the
+     page you are reading: the one state where "are you sure" has to be legible. */
+  .forget:hover, .forget.armed { color:var(--err); border-color:var(--err); }
   .re-read:disabled, .forget:disabled {  cursor:default; opacity:1 !important; color:var(--ink-soft) !important; background:var(--panel-2) !important; border-color:var(--line) !important; cursor:not-allowed;}
   .reread-note { margin-top: 12px; padding: 8px 12px; border-radius:8px; font-size:12px; line-height:1.5;
     border:1px solid var(--line); background:var(--surface-2); color:var(--ink-soft); }
