@@ -19,6 +19,10 @@
     /* cortex's purple, as a TOKEN. It was written #8b5cf6 and used in both themes: 3.84:1 on each,
        because a literal cannot flip. Same button, same two values, as lens's .ch-btn.brain. */
     --brain:#a78bfa;
+    /* the message that says your write was REFUSED is the one you most need to read, and it was a
+       literal #c8553d in both themes: 4.01:1 on this surface, 4.11:1 on paper. A hardcoded colour
+       cannot flip with the theme — the third time this exact bug has turned up in this kit. */
+    --err:#e8705a;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Source Serif Pro","Charter",Georgia,serif;
     --mono:ui-monospace,"SFMono-Regular",Menlo,monospace;
@@ -30,6 +34,7 @@
     --ink:#2b2520; --ink-soft:#4c443b; --muted:#70665b; --faint:#776d5e;
     --accent:#915700; --accent-soft:#efe6d2; --mark:#6b4906; --mark-bg:rgba(180,122,34,.2);
     --brain:#6d28d9;   /* the same purple, for a light surface */
+    --err:#a8321c;   /* the same red, for a light surface */
     --shadow:0 10px 34px rgba(80,60,30,.12);
   }
   @media (prefers-color-scheme: light) {
@@ -44,6 +49,7 @@
          OS-light reader was still getting the NIGHT purple. Exactly the drift cortex's palette test
          now asserts (C150), found the same day, by forgetting the same thing. */
       --brain:#6d28d9;
+      --err:#a8321c;
       --shadow:0 10px 34px rgba(80,60,30,.12);
     }
   }
@@ -139,7 +145,7 @@
   .fetchbar button:disabled {  cursor:default; opacity:1 !important; color:var(--ink-soft) !important; background:var(--panel-2) !important; border-color:var(--line) !important; cursor:not-allowed;}
   .fetch-msg { margin-top: 8px; font-family:var(--mono); font-size:12px; color:var(--muted); }
   .fetch-msg[hidden] { display:none; }
-  .fetch-msg.err { color:#c8553d; }
+  .fetch-msg.err { color:var(--err); }
   .searchbar { padding: 12px 16px 8px; border-bottom:none; }
   .searchbar .fld { display:flex; align-items:center; gap: 8px; background:var(--bg); border:1px solid var(--line);
     border-radius:8px; padding: 0 12px; height:36px; transition:border-color .15s; }
