@@ -10,8 +10,26 @@ const work = mkdtempSync(join(tmpdir(), 'scout-serve-'));
 process.env.SCOUT_DB = join(work, 'cache.db');
 process.on('exit', () => { try { rmSync(work, { recursive: true, force: true }); } catch {} });
 
+// all imported HERE, dynamically — after SCOUT_DB is set above. A static import at the top of this
+// file would be hoisted and would freeze db.js's DB_PATH to './.scout/cache.db'. See the guard below.
 const { save, search, related, overview } = await import('../src/core.js');
 const { createScoutServer } = await import('../src/server.js');
+const { DB_PATH } = await import('../src/db.js');
+
+test('the suite runs against the THROWAWAY cache — never your real reading history', () => {
+  // db.js reads SCOUT_DB at MODULE LOAD, so it is frozen by whatever ran first. This file is careful
+  // — it sets the env var above and only then imports core — but "careful" is not a gate. ONE static
+  // `import … from '../src/db.js'` at the top would be hoisted, run db.js BEFORE the env var is set,
+  // and freeze DB_PATH to its default: the temp cache would still be created, and every test below
+  // would write to your actual reading history instead. lens shipped exactly that (fixed in lens
+  // 58fa291) — its suite had been rewriting the developer's real index at the tool's own default
+  // path, and its header said "a throwaway DB" the whole time. Nothing lied except the import order,
+  // and nothing failed. This is the assertion that would have.
+  assert.equal(DB_PATH, process.env.SCOUT_DB,
+    'db.js resolved DB_PATH before this file pointed SCOUT_DB at a temp dir — it is about to write '
+    + 'to your real cache');
+  assert.ok(DB_PATH.startsWith(tmpdir()), 'and that path is under the temp dir, not the repo');
+});
 
 save({ url: 'https://example.com/reconnect', title: 'WebSocket reconnect backoff',
   description: 'Exponential backoff for socket reconnects.',
