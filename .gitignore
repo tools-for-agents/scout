@@ -5,3 +5,8 @@ node_modules/
 *.db
 *.db-*
 .mutants.lock
+
+# iris writes its screenshots to ./.iris relative to the CWD it is run from, so auditing this
+# repo from its own directory drops build output straight into the working tree. Commit f7dd608
+# swept five PNGs in with a `git add -A`. Output, not source.
+.iris/
