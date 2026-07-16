@@ -344,7 +344,8 @@
     <section class="ovw" id="overview" hidden aria-label="Reading overview"></section>
   </div>
 
-<script>
+<script type="module">
+import { renderMarkdown, esc, safeHref } from './markdown.js';
 const $ = (s) => document.querySelector(s);
 // ── WHEN THE SERVER SAYS NO, SAY SO ──────────────────────────────────────────────
 //
@@ -506,7 +507,7 @@ const api = async (p, o) => {
   return await r.json();
   } finally { busy(false); }
 };
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+// esc comes from ./markdown.js — one escaper, used by the page and by the renderer.
 
 let LIB = [], STATS = null, activeUrl = null, activeMarkdown = '', hostFilter = null;
 
@@ -1041,66 +1042,9 @@ $('#readerWrap').addEventListener('scroll', () => {
   if (tocRAF) return; tocRAF = requestAnimationFrame(() => { tocRAF = 0; updateActiveHeading(); updateProgress(); });
 });
 
-// ── Zero-dependency markdown → HTML ──────────────────────────────────────────
-function renderMarkdown(md) {
-  const lines = String(md).replace(/\r\n?/g, '\n').split('\n');
-  let html = '', i = 0;
-  const inline = (t) => esc(t)
-    .replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
-    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, src) =>       // images — before links (![…] contains […])
-      `<img class="ar-img" src="${src}" alt="${alt}" loading="lazy" />`)
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, txt, href) =>
-      `<a href="${esc(href)}" target="_blank" rel="noopener">${txt}</a>`);
-  while (i < lines.length) {
-    const line = lines[i];
-    if (!line.trim()) { i++; continue; }
-    // fenced code
-    if (/^```/.test(line)) {
-      const buf = []; i++;
-      while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
-      i++; html += `<pre><code>${esc(buf.join('\n'))}</code></pre>`; continue;
-    }
-    // indented code block (4 spaces / tab)
-    if (/^( {4}|\t)/.test(line)) {
-      const buf = [];
-      while (i < lines.length && (/^( {4}|\t)/.test(lines[i]) || !lines[i].trim())) {
-        if (!lines[i].trim() && !(lines[i + 1] && /^( {4}|\t)/.test(lines[i + 1]))) break;
-        buf.push(lines[i++].replace(/^( {4}|\t)/, ''));
-      }
-      html += `<pre><code>${esc(buf.join('\n'))}</code></pre>`; continue;
-    }
-    // heading
-    const h = line.match(/^(#{1,6})\s+(.*)$/);
-    if (h) { const n = Math.min(3, h[1].length); html += `<h${n}>${inline(h[2])}</h${n}>`; i++; continue; }
-    // hr
-    if (/^(---+|\*\*\*+|___+)\s*$/.test(line)) { html += '<hr />'; i++; continue; }
-    // blockquote
-    if (/^>\s?/.test(line)) {
-      const buf = [];
-      while (i < lines.length && /^>\s?/.test(lines[i])) buf.push(lines[i++].replace(/^>\s?/, ''));
-      html += `<blockquote>${renderMarkdown(buf.join('\n'))}</blockquote>`; continue;
-    }
-    // unordered list
-    if (/^[-*+]\s+/.test(line)) {
-      const buf = [];
-      while (i < lines.length && /^[-*+]\s+/.test(lines[i])) buf.push(`<li>${inline(lines[i++].replace(/^[-*+]\s+/, ''))}</li>`);
-      html += `<ul>${buf.join('')}</ul>`; continue;
-    }
-    // ordered list
-    if (/^\d+\.\s+/.test(line)) {
-      const buf = [];
-      while (i < lines.length && /^\d+\.\s+/.test(lines[i])) buf.push(`<li>${inline(lines[i++].replace(/^\d+\.\s+/, ''))}</li>`);
-      html += `<ol>${buf.join('')}</ol>`; continue;
-    }
-    // paragraph (gather until blank / block start)
-    const buf = [];
-    while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|>\s?|[-*+]\s|\d+\.\s|```|( {4}|\t)|(---+|\*\*\*+|___+)\s*$)/.test(lines[i])) buf.push(lines[i++]);
-    html += `<p>${inline(buf.join(' '))}</p>`;
-  }
-  return html;
-}
+// renderMarkdown() now lives in ./markdown.js — see the import at the top of this script. It was
+// extracted so it could be TESTED: it is the one renderer here that is shown a stranger's text, and
+// it was double-escaping every href and handing out javascript: links from fetched pages.
 
 // ── formatting helpers ───────────────────────────────────────────────────────
 function fmtDate(iso) {

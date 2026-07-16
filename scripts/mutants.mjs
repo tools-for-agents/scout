@@ -24,6 +24,18 @@ import { spawnSync } from 'node:child_process';
 
 const CANARIES = [
   {
+    why: 'a link must point where the PAGE said — inline() escapes the whole line first, so escaping the captured href AGAIN made `&amp;amp;` and the browser resolved it to a url with a literal "&amp;" in it. Every link with two query parameters was broken, in the tool whose job is reading the web',
+    file: 'public/markdown.js',
+    find: '      return u === null ? txt : `<a href="${u}" target="_blank" rel="noopener">${txt}</a>`;',
+    into: '      return u === null ? txt : `<a href="${esc(u)}" target="_blank" rel="noopener">${txt}</a>`;',
+  },
+  {
+    why: 'a FETCHED page does not get to choose the scheme — scout renders what a stranger\'s server sent, and [x](javascript:alert(document.domain)) rendered a live href on scout\'s own origin, where the reading history and the api live. An agent following a link is a click',
+    file: 'public/markdown.js',
+    find: '  return SAFE_SCHEME.test(href) ? href : null;    // javascript:, data:, vbscript:, file: … → refused',
+    into: '  return href;',
+  },
+  {
     why: 'forget must not LITTER — with nothing to forget it must return before any run() (which opens create=true), or forgetting an uncached URL conjures a .scout/ store into existence',
     file: 'src/core.js',
     find: '  if (n === 0) return { url, forgotten: false };',
