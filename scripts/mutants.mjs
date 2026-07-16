@@ -24,6 +24,14 @@ import { spawnSync } from 'node:child_process';
 
 const CANARIES = [
   {
+    why: 'a quiet grey is either an honest ALIAS or genuinely distinguishable — never a near-miss. Paper has no room for a third grey (--muted is already 4.81:1 on --bg), so --faint IS --muted there; the old #776d5e sat 18.4 from --muted (inside iris\'s own 30 tolerance for "roles nobody can tell apart") and made the search placeholder 4.35:1 on every page load — a state the eye cannot report at all, because a placeholder is not a text node',
+    file: 'public/index.html',
+    // \n + FOUR spaces: the media block's copy is indented six, and contains the four-space string
+    // as a substring — so a bare '    --faint:…' anchor matches twice and watches neither.
+    find: '\n    --faint:var(--muted);',
+    into: '\n    --faint:#776d5e;',
+  },
+  {
     why: 'a link must point where the PAGE said — inline() escapes the whole line first, so escaping the captured href AGAIN made `&amp;amp;` and the browser resolved it to a url with a literal "&amp;" in it. Every link with two query parameters was broken, in the tool whose job is reading the web',
     file: 'public/markdown.js',
     find: '      return u === null ? txt : `<a href="${u}" target="_blank" rel="noopener">${txt}</a>`;',

@@ -14,7 +14,13 @@
   :root {
     /* night (default) — a lamp-lit reading desk */
     --bg:#151210; --surface:#1d1916; --surface-2:#241f1a; --line:#2f2823; --line-2:#3d342c;
-    --ink:#ece5da; --ink-soft:#c9bfb2; --muted:#9d9184; --faint:#8d8277;
+    /* --faint is a real third grey HERE — and #928779 is the ONLY place it can stand. Measured: it
+       must clear 4.5 on the lightest surface it could ever land on (--surface-2 → 4.64:1) and stay
+       30+ from --muted or nobody can tell them apart. #8d8277 was 4.35:1 on --surface-2; every value
+       bright enough to fix that (#968b7d, #9a8f81) collapses to 19.7 and 7.8 from --muted — i.e. it
+       stops being a third grey at all. One narrow band, found by measuring rather than nudging.
+       On paper the band is empty, and the block below says so. */
+    --ink:#ece5da; --ink-soft:#c9bfb2; --muted:#9d9184; --faint:#928779;
     --accent:#e0a24e; --accent-soft:#3a2f1e; --mark:#f2c66a; --mark-bg:rgba(224,162,78,.22);
     /* cortex's purple, as a TOKEN. It was written #8b5cf6 and used in both themes: 3.84:1 on each,
        because a literal cannot flip. Same button, same two values, as lens's .ch-btn.brain. */
@@ -34,7 +40,16 @@
   :root[data-theme="paper"] {
     /* paper — a bright reading desk by daylight */
     --bg:#f2ede2; --surface:#fbf8f1; --surface-2:#f5f0e6; --line:#e3dccb; --line-2:#d6ccb8;
-    --ink:#2b2520; --ink-soft:#4c443b; --muted:#70665b; --faint:#776d5e;
+    --ink:#2b2520; --ink-soft:#4c443b; --muted:#70665b;
+    /* 🔑 ON PAPER THERE IS NO ROOM FOR A THIRD QUIET GREY, so --faint IS --muted here.
+       --muted is already 4.81:1 on --bg — 0.31 above the line this kit declares. Every grey quieter
+       than it fails: the old --faint #776d5e measured 4.35:1 on --bg, and the only passing candidate
+       sat 3.0 away from --muted, which is to say it WAS --muted. The two were 18.4 apart — inside
+       iris's own 30 tolerance for "two roles nobody can tell apart" — so the distinction was already
+       invisible. All it did was make the search box's placeholder unreadable, on every page load, in
+       a state the eye cannot report at all (a placeholder is not a text node).
+       An alias says that out loud. A near-miss just fails quietly. */
+    --faint:var(--muted);
     --accent:#915700; --accent-soft:#efe6d2; --mark:#6b4906; --mark-bg:rgba(180,122,34,.2);
     --brain:#6d28d9;   /* the same purple, for a light surface */
     --err:#a8321c;   /* the same red, for a light surface */
@@ -44,7 +59,8 @@
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="night"]) {
       --bg:#f2ede2; --surface:#fbf8f1; --surface-2:#f5f0e6; --line:#e3dccb; --line-2:#d6ccb8;
-      --ink:#2b2520; --ink-soft:#4c443b; --muted:#70665b; --faint:#776d5e;
+      --ink:#2b2520; --ink-soft:#4c443b; --muted:#70665b;
+      --faint:var(--muted);   /* no room on paper — see the note in the toggle block */
       --accent:#915700; --accent-soft:#efe6d2; --mark:#6b4906; --mark-bg:rgba(180,122,34,.2);
       /* 🔑 THE PAPER THEME IS DECLARED TWICE — once for the toggle ([data-theme="paper"]) and once
          here for the OS preference — and a token added to only one of them makes the page look
