@@ -16,6 +16,9 @@
     --bg:#151210; --surface:#1d1916; --surface-2:#241f1a; --line:#2f2823; --line-2:#3d342c;
     --ink:#ece5da; --ink-soft:#c9bfb2; --muted:#9d9184; --faint:#8d8277;
     --accent:#e0a24e; --accent-soft:#3a2f1e; --mark:#f2c66a; --mark-bg:rgba(224,162,78,.22);
+    /* cortex's purple, as a TOKEN. It was written #8b5cf6 and used in both themes: 3.84:1 on each,
+       because a literal cannot flip. Same button, same two values, as lens's .ch-btn.brain. */
+    --brain:#a78bfa;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Source Serif Pro","Charter",Georgia,serif;
     --mono:ui-monospace,"SFMono-Regular",Menlo,monospace;
@@ -26,6 +29,7 @@
     --bg:#f2ede2; --surface:#fbf8f1; --surface-2:#f5f0e6; --line:#e3dccb; --line-2:#d6ccb8;
     --ink:#2b2520; --ink-soft:#4c443b; --muted:#70665b; --faint:#776d5e;
     --accent:#915700; --accent-soft:#efe6d2; --mark:#6b4906; --mark-bg:rgba(180,122,34,.2);
+    --brain:#6d28d9;   /* the same purple, for a light surface */
     --shadow:0 10px 34px rgba(80,60,30,.12);
   }
   @media (prefers-color-scheme: light) {
@@ -33,6 +37,13 @@
       --bg:#f2ede2; --surface:#fbf8f1; --surface-2:#f5f0e6; --line:#e3dccb; --line-2:#d6ccb8;
       --ink:#2b2520; --ink-soft:#4c443b; --muted:#70665b; --faint:#776d5e;
       --accent:#915700; --accent-soft:#efe6d2; --mark:#6b4906; --mark-bg:rgba(180,122,34,.2);
+      /* 🔑 THE PAPER THEME IS DECLARED TWICE — once for the toggle ([data-theme="paper"]) and once
+         here for the OS preference — and a token added to only one of them makes the page look
+         different depending on WHICH WAY you arrived at light. I added --brain above and not here,
+         and the eye caught it immediately: the button went from 3.84:1 to 2.33:1, because an
+         OS-light reader was still getting the NIGHT purple. Exactly the drift cortex's palette test
+         now asserts (C150), found the same day, by forgetting the same thing. */
+      --brain:#6d28d9;
       --shadow:0 10px 34px rgba(80,60,30,.12);
     }
   }
@@ -146,6 +157,7 @@
   .recent .rh { display:flex; justify-content:space-between; align-items:center; font-family:var(--mono);
     font-size:12px; color:var(--faint); text-transform:uppercase; letter-spacing:1px; padding: 1px 2px 8px; }
   .recent .clr { cursor:pointer; background:none; border:none; color:var(--faint); font-family:var(--mono);
+    min-height:24px; display:inline-flex; align-items:center;   /* a 12px line is not a tap target */
     font-size:12px; letter-spacing:.5px; text-transform:uppercase; padding: 0; }
   .recent .clr:hover { color:var(--accent); }
   .recent .rchips { display:flex; flex-wrap:wrap; gap: 4px; }
@@ -156,7 +168,11 @@
   .recent .rchip.active { border-color:var(--accent); background:var(--accent-soft); }
   .recent .rchip .rg { color:var(--accent); font-size:12px; flex:none; }
   .recent .rchip .rt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px; }
-  .list { flex:1; overflow:auto; padding: 8px; }
+  /* 🔑 padding-bottom clears the fixed .xtk bar. The list has overflow:auto, but a scroller with
+     nothing to scroll cannot move anything: measured at tablet, scrollHeight === clientHeight === 727,
+     so the last card's summary sat UNDER the bar forever. `overflow:auto` is not the same as "the
+     reader can get to it". */
+  .list { flex:1; overflow:auto; padding: 8px 8px 56px; }
   .list-label { font-size:12px; color:var(--faint); text-transform:uppercase; letter-spacing:1px; padding: 8px 12px 8px; }
   .list-label b { color:var(--ink); }
   .list-label .of { color:var(--muted); font-weight:400; margin:0 3px; }
@@ -214,16 +230,23 @@
   .reader h1.title { font-family:var(--serif); font-size:40px; line-height:1.15; letter-spacing:-.4px; margin: 0 0 16px; text-wrap:balance; }
   .byline { display:flex; flex-wrap:wrap; align-items:center; gap: 8px; font-size:12px; color:var(--muted); padding-bottom: 24px; margin-bottom: 32px; border-bottom:1px solid var(--line); }
   .byline .dot { color:var(--faint); }
-  .byline a { color:var(--accent); text-decoration:none; }
+  /* the link to the original page — 285x15 before: wide, and 9px short of a finger. */
+  .byline a { color:var(--accent); text-decoration:none; min-height:24px; display:inline-flex; align-items:center; }
   .byline a:hover { text-decoration:underline; }
   .byline .chip { font-family:var(--mono); font-size:12px; background:var(--surface-2); border:1px solid var(--line); border-radius:12px; padding: 2px 8px; color:var(--muted); }
   .copy-md { margin-left: auto; font-family:var(--mono); font-size:12px; background:var(--surface-2); border:1px solid var(--line); color:var(--muted); border-radius:12px; padding: 4px 12px; cursor:pointer; transition:color .12s, border-color .12s; }
   .copy-md:hover { color:var(--accent); border-color:var(--accent); }
   .copy-md.ok { color:#5aa15f; border-color:#5aa15f; }
   /* capture wears cortex's violet, not scout's amber: it is the brain's action */
-  .to-brain { font-family:var(--mono); font-size:12px; background:rgba(167,139,250,.1); border:1px solid rgba(167,139,250,.4);
-    color:#8b5cf6; border-radius:12px; padding: 4px 12px; cursor:pointer; transition:background .12s, border-color .12s; }
-  .to-brain:hover, .to-brain.done { background:rgba(167,139,250,.2); border-color:#8b5cf6; }
+  /* min-height:24 — the kit declares that as the smallest thing a finger may be asked to hit.
+     The colours come from --brain: the ink WAS the literal #8b5cf6, in both themes, at 3.84:1 on
+     each — and the tint under it is the same purple, so it has to move with it. */
+  .to-brain { font-family:var(--mono); font-size:12px;
+    background:color-mix(in srgb, var(--brain) 12%, transparent);
+    border:1px solid color-mix(in srgb, var(--brain) 40%, transparent);
+    color:var(--brain); border-radius:12px; padding: 4px 12px; min-height:24px;
+    display:inline-flex; align-items:center; cursor:pointer; transition:background .12s, border-color .12s; }
+  .to-brain:hover, .to-brain.done { background:color-mix(in srgb, var(--brain) 22%, transparent); border-color:var(--brain); }
   .to-brain:disabled {  cursor:default; opacity:1 !important; color:var(--ink-soft) !important; background:var(--panel-2) !important; border-color:var(--line) !important; cursor:not-allowed;}
   /* a cache you cannot refresh is a fossil */
   .re-read, .forget { font-family:var(--mono); font-size:12px; background:var(--surface-2); border:1px solid var(--line);
@@ -240,20 +263,25 @@
   /* article body — serif, comfortable measure */
   .article { font-family:var(--serif); font-size:16px; line-height:1.72; color:var(--ink-soft); }
   .article > *:first-child { margin-top: 0; }
-  .article h1, .article h2, .article h3 { font-family:var(--serif); color:var(--ink); line-height:1.25; margin: 1.9em 0 .55em; letter-spacing:-.2px; }
+  /* 🔑 THE PROSE IS ON THE GRID NOW — px, not em. Every gate in this repo runs --strict, and not one
+     of them had ever opened the reader, so the one stylesheet that is ALL typography was the one
+     nobody graded. em multiples of a 16px base land wherever they land: 1.15em = 18.4px, .4em =
+     6.4px, .86em = 13.76px — none of them on the 4px grid this kit declares, and 13.76 is not in the
+     type scale either. Nothing was broken; nobody had decided it. This is the decision. */
+  .article h1, .article h2, .article h3 { font-family:var(--serif); color:var(--ink); line-height:1.25; margin: 44px 0 12px; letter-spacing:-.2px; }
   .article h1 { font-size:24px; } .article h2 { font-size:24px; } .article h3 { font-size:20px; }
-  .article p { margin: 0 0 1.15em; }
+  .article p { margin: 0 0 20px; }
   .article a { color:var(--accent); text-decoration:none; border-bottom:1px solid var(--accent-soft); }
   .article a:hover { border-bottom-color:var(--accent); }
   .article .ar-img { display:block; max-width:100%; height:auto; margin: 1.6em auto; border:1px solid var(--line); border-radius:8px; background:var(--surface-2); }
   .article strong { color:var(--ink); font-weight:650; }
   .article em { font-style:italic; }
-  .article ul, .article ol { margin: 0 0 1.15em; padding-left: 1.4em; }
-  .article li { margin: .4em 0; padding-left: .2em; }
+  .article ul, .article ol { margin: 0 0 20px; padding-left: 24px; }
+  .article li { margin: 8px 0; padding-left: 4px; }
   .article li::marker { color:var(--accent); }
   .article blockquote { margin: 1.4em 0; padding: 2px 0 2px 20px; border-left:3px solid var(--accent); color:var(--ink); font-style:italic; }
-  .article code { font-family:var(--mono); font-size:.86em; background:var(--surface-2); border:1px solid var(--line); border-radius:4px; padding: 1px 4px; }
-  .article pre { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding: 16px 16px; overflow:auto; margin: 1.3em 0; }
+  .article code { font-family:var(--mono); font-size:14px; background:var(--surface-2); border:1px solid var(--line); border-radius:4px; padding: 1px 4px; }
+  .article pre { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding: 16px 16px; overflow:auto; margin: 20px 0; }
   .article pre code { background:none; border:none; padding: 0; font-size:12px; line-height:1.55; color:var(--ink-soft); }
   .article hr { border:none; border-top:1px solid var(--line); margin: 2em 0; }
   /* "More from <host>" — related reads at the foot of the article */

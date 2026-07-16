@@ -85,6 +85,48 @@ jobs:
           tokens: kit      # the kit's ONE design system — iris/tokens.json, not a copy
           strict: true     # drift is a regression now; a gate is what keeps it from creeping back
 
+  # ── …AND THE READING ROOM, WHICH IS THE ONLY REASON scout EXISTS ──────────────
+  #
+  # `look` seeds pages and renders the LIST. `first-run` renders it empty. `states` poses the page by
+  # setting classes. Not one of them had ever OPENED AN ARTICLE — the room this tool is named for.
+  #
+  # It reaches the state by USING the app (clicking a card), not by posing it. The first look that
+  # ever opened an article found, at every viewport and both themes: the source link 285×15 (wide,
+  # and 9px short of a finger); "🧠 → cortex" written as a LITERAL #8b5cf6 in both themes, 3.84:1 on
+  # each (the same bug, and the same fix, as lens's .ch-btn.brain — these pages share DNA, so they
+  # share defects); the card list holding its last summary under the fixed cross-tool bar forever
+  # (it HAS overflow:auto, and scrollHeight === clientHeight, so there was nothing to scroll: a
+  # scroller with nowhere to go cannot move anything out from under anything); and — because this is
+  # the one stylesheet that is ALL typography — a prose rhythm nobody had ever graded, em multiples
+  # of a 16px base landing at 18.4px, 6.4px, 13.76px, off the grid and scale this kit declares.
+  look-reader:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Serve it, THEN prove there is an article to open
+        run: |
+          SCOUT_DB=./.scout/cache.db node scripts/seed.js
+          SCOUT_DB=./.scout/cache.db node src/cli.js serve &
+          for i in $(seq 30); do curl -sf http://localhost:7950/api/overview >/dev/null && break; sleep 1; done
+          n=$(curl -sf http://localhost:7950/api/overview | node -pe "JSON.parse(require('fs').readFileSync(0)).pages ?? 0")
+          echo "pages the gate can open: $n"
+          test "$n" -gt 0 || { echo "::error::no pages cached — iris would audit a reading room with nothing to read"; exit 1; }
+      - uses: tools-for-agents/iris@main
+        with:
+          url: http://localhost:7950/
+          viewports: phone,tablet,desktop
+          name: scout-reader
+          tokens: kit      # the kit's ONE design system — iris/tokens.json, not a copy
+          strict: true     # drift is a regression now; a gate is what keeps it from creeping back
+          # Click a real card, then assert the article is actually IN the reader. A --pre that throws
+          # makes iris report "the state was never reached and NOTHING was audited" instead of quietly
+          # grading the list behind it.
+          pre: >-
+            await new Promise(r=>setTimeout(r,1500));const card=document.querySelector('[data-url]');if(!card) throw new Error('the seeded cache shows no pages — the journey to the reader starts at a card');card.click();await new Promise(r=>setTimeout(r,1800));const art=document.querySelector('#reader, article');if(!art||!art.textContent.trim()) throw new Error('clicking a card did not put an article in the reader');if(!document.querySelector('.article p, .article h1, .article h2')) throw new Error('the reader opened with no prose in it — that is an empty room, not an article');
+
   # THE EMPTY STATE IS THE ONE STATE EVERY USER SEES FIRST — AND NOTHING WAS LOOKING AT IT.
   #
   # The `look` job above seeds data on purpose: a UI gate that has never seen a row of data
