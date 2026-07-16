@@ -1011,18 +1011,34 @@ test('a SAVE must not make a page VANISH while it is being saved', async () => {
   // markdown body means a big FTS write. With a tiny body the gap is microseconds and the race only
   // reproduces on some machines — it survived this canary in CI while dying locally, which is a test
   // that only SOMETIMES guards. Widen the window until the bug is deterministic, or do not claim it.
-  // 🔑 THE SEARCHER MUST RUN FOR EXACTLY AS LONG AS THE WRITER — NOT FOR A FIXED TIME.
-  // My first cut gave the searcher a fixed 2.5s window and hoped it overlapped the writes. It caught
-  // the race on my machine and MISSED it in CI, so the canary SURVIVED there: a race test that only
-  // sometimes reproduces the race only sometimes guards, and a flaky canary teaches you to ignore the
-  // gate. The writer now drops a sentinel when it finishes and the searcher polls until it appears —
-  // full overlap, every run, on any hardware. (The big body also widens the DELETE→INSERT window.)
+  // 🔑 AND IT MUST PROVE IT ACTUALLY RACED. My first cut gave the searcher a fixed 2.5s window and
+  // hoped it overlapped the writes; it caught the race here and MISSED it in CI. The DONE sentinel
+  // was the fix — but it only synchronizes the END of the race. Nothing holds the writer back until
+  // the searcher is up, so a searcher that loses the node-boot toss samples the TAIL. Measured in
+  // cortex's twin of this test, with its lock deliberately removed: a searcher starting 28ms late got
+  // ONE search in — landing after the last write, seeing a consistent index, and PASSING. 3 runs in
+  // 10. `min === N` from a single sample is not evidence the invariant held, it is evidence that
+  // nothing was measured, and the assert cannot tell those two apart. (The big body widens the
+  // DELETE→INSERT window, but it BUYS FEWER SAMPLES — it makes a late start worse, not better.)
+  //
+  // So the barrier is two-sided, and the sample count is asserted: an unraced race must be RED.
+  const ready = pjoin(dir, 'READY');
   const done = pjoin(dir, 'DONE');
+  const MIN_SAMPLES = 15;   // the 150KB bodies make each search dear — honest runs land ~10x this
   const saver = pjoin(dir, 'save.mjs');
   writeFileSync(saver, `
     import fs from 'node:fs';
     const m = await import(${JSON.stringify(core)});
     const big = 'zzracepage lorem ipsum dolor sit amet '.repeat(4000);   // ~150KB → a slow FTS write
+    // the seeding run has no searcher to wait for; only the racing run passes 'barrier'
+    if (process.argv[2] === 'barrier') {
+      const nap = new Int32Array(new SharedArrayBuffer(4));
+      const t0 = Date.now();
+      while (!fs.existsSync(${JSON.stringify(ready)})) {
+        if (Date.now() - t0 > 30000) throw new Error('the searcher never signalled READY — no race happened');
+        Atomics.wait(nap, 0, 0, 2);
+      }
+    }
     for (let r = 0; r < 25; r++) for (let i = 0; i < ${N}; i++)
       m.save({ url: 'https://ex.com/p' + i, title: 'Page ' + i, markdown: big, html_bytes: 100 });
     fs.writeFileSync(${JSON.stringify(done)}, 'x');
@@ -1031,23 +1047,31 @@ test('a SAVE must not make a page VANISH while it is being saved', async () => {
   writeFileSync(seek, `
     import fs from 'node:fs';
     const m = await import(${JSON.stringify(core)});
-    let min = 1e9;
+    m.search('zzracepage', { k: 50 });                  // warm up: the first search opens the db and prepares
+    fs.writeFileSync(${JSON.stringify(ready)}, 'x');    // ...only now may the writer start
+    let min = 1e9, iters = 0;
     while (!fs.existsSync(${JSON.stringify(done)})) {
       const r = m.search('zzracepage', { k: 50 });
       if (r.matched < min) min = r.matched;
+      iters++;
     }
-    console.log(min);
+    console.log(JSON.stringify({ min, iters }));
   `);
 
-  const run = (s) => new Promise((res, rej) =>
-    execFile(process.execPath, [s], { env, encoding: 'utf8' }, (e, out) => (e ? rej(e) : res(out))));
+  const run = (s, ...argv) => new Promise((res, rej) =>
+    execFile(process.execPath, [s, ...argv], { env, encoding: 'utf8' }, (e, out) => (e ? rej(e) : res(out))));
 
   try {
     await run(saver);                                  // seed the cache
     rmSync(done, { force: true });                     // …and clear the sentinel the seed run dropped
-    const [, seen] = await Promise.all([run(saver), run(seek)]);   // save WHILE searching
-    assert.equal(+seen.trim(), N,
-      `every search during a save must see all ${N} pages — the fewest seen was ${seen.trim()}`);
+    const [, seen] = await Promise.all([run(saver, 'barrier'), run(seek)]);   // save WHILE searching
+    const { min, iters } = JSON.parse(seen.trim());
+    // the measurement is checked BEFORE the invariant — an unraced race proves nothing either way
+    assert.ok(iters >= MIN_SAMPLES,
+      `the searcher only got ${iters} searches in while the writer ran — too few to have raced it. `
+      + 'A pass here would mean nothing was measured, not that the cache held together.');
+    assert.equal(min, N,
+      `every one of the ${iters} searches during a save must see all ${N} pages — the fewest seen was ${min}`);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
