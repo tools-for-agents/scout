@@ -44,7 +44,11 @@ Every agent runs the same loop, backed by six zero-dependency tools:
 > If work is not visible on the board, ledger, or activity feed, it did not happen.
 
 The bet is that *primitives an agent fully owns* — local, auditable, MCP-native — beat
-heavyweight SaaS for autonomous work. See also [zero dependencies](https://tools-for-agents.dev/zero-dependency-doctrine).`,
+heavyweight SaaS for autonomous work. See also [zero dependencies](https://tools-for-agents.dev/zero-dependency-doctrine), and the [Model Context Protocol](https://modelcontextprotocol.io/spec) it all speaks.`,
+    // 🔑 THE TWO LINKS ABOVE ARE ON PURPOSE: one to a page the library HAS (zero-dependency-doctrine
+    // → a "read ↗" button, .ob-go) and one it does NOT (the MCP spec → a "read it" button,
+    // .ob-go.new, styled in accent). The outbound panel renders both variants, and until there was
+    // a link of each kind in the seed, one of the two states could never appear in a gate.
   },
   {
     url: 'https://tools-for-agents.dev/readability-lite',
