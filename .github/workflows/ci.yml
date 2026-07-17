@@ -228,6 +228,45 @@ jobs:
           pre: >-
             const until=async(f,ms=9000)=>{const t=Date.now()+ms;while(Date.now()<t){if(f())return true;await new Promise(r=>setTimeout(r,50));}throw new Error('timed out waiting for the overview to arrive');};await until(()=>document.querySelectorAll('[data-url]').length>0);document.getElementById('stats').click();await until(()=>!document.getElementById('overview').hidden);await until(()=>document.querySelectorAll('.days .day, .hostrow').length>0);
 
+  # THE WIDEN AFFORDANCE — the one control that appears ONLY when a search overflows the shelf.
+  #
+  # `look` seeds data and hovers the shelf; `look-reader` opens an article; `look-overview` presses
+  # #stats. Not one of them ever made a search WITHHOLD, so `.sq-b` — the "Show 40" button that
+  # raises the 20-hit result cap and re-runs — was the last interactive control in the whole kit that
+  # nothing here had ever rendered. And iris counts a hover selector as landed when it MATCHES THE
+  # DOM, not when it renders (see the note in `look`), so a button that never appears is a hover that
+  # silently passes over nothing — a green that means nothing. The seed carries enough pages that a
+  # search for a word every article contains overflows the cap and the button appears; drop those
+  # pages and this gate goes RED, because the control it hovers stops existing. That is the proof it
+  # is a gate and not decoration. CLEAN at phone, tablet and desktop.
+  look-search:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Serve it, THEN prove a common search overflows the result cap
+        run: |
+          SCOUT_DB=./.scout/cache.db node scripts/seed.js
+          SCOUT_DB=./.scout/cache.db node src/cli.js serve &
+          for i in $(seq 30); do curl -sf http://localhost:7950/api/overview >/dev/null && break; sleep 1; done
+          w=$(curl -sf "http://localhost:7950/api/search?k=20&q=the" | node -pe "JSON.parse(require('fs').readFileSync(0)).withheld ?? 0")
+          echo "pages withheld beyond the 20-hit cap: $w"
+          test "$w" -gt 0 || { echo "::error::a search for \"the\" withheld nothing — the seed no longer overflows the cap, so the widen button (.sq-b) cannot render"; exit 1; }
+      - uses: tools-for-agents/iris@main
+        with:
+          url: http://localhost:7950/
+          viewports: phone,tablet,desktop
+          name: scout-search
+          tokens: kit
+          strict: true
+          # .sq-b is below 20 result cards — iris scrolls to a hover target, so hovering it both
+          # proves it renders and audits its :hover (accent fill) contrast, the one state JS cannot pose.
+          hover: '.sq-b'
+          pre: >-
+            const wait=async(sel,ms=9000)=>{const t=Date.now()+ms;while(Date.now()<t){if(document.querySelector(sel))return;await new Promise(r=>setTimeout(r,50));}throw new Error('waited '+ms+'ms for '+sel);};await wait('[data-url]');const q=document.getElementById('q');if(!q)throw new Error('the search box (#q) is not on the page');q.value='the';q.dispatchEvent(new Event('input',{bubbles:true}));try{await wait('.squeeze .sq-b');}catch(e){throw new Error('the search matched too few pages to withhold any, so the widen button (.sq-b) never rendered — the reading-room seed must overflow the 20-hit cap for this state to exist');}document.querySelector('.sq-b').scrollIntoView({block:'center'});
+
   # THE EMPTY STATE IS THE ONE STATE EVERY USER SEES FIRST — AND NOTHING WAS LOOKING AT IT.
   #
   # The `look` job above seeds data on purpose: a UI gate that has never seen a row of data
