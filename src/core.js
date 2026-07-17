@@ -246,8 +246,17 @@ export async function fetchUrl(url, { fresh = false, max_tokens = 6000, raw = fa
 export function library({ k = 1000 } = {}) {
   k = posInt(k, 1000, 10000);
   const total = get('SELECT COUNT(*) n FROM pages')?.n ?? 0;
+  // 🔑 fetched_at IS NOT UNIQUE, SO IT IS NOT AN ORDER BY ITSELF. It is `new Date().toISOString()`
+  // at millisecond resolution: two pages fetched in the same tick tie, and on a tie SQLite returns
+  // whatever the query plan happens to yield — usually rowid order, which is exactly the thing that
+  // is NOT stable here. `forget` a page and re-read it (a normal scout flow) and it gets a new
+  // rowid, so among its same-timestamp neighbours it silently jumps to the end of "recent" though
+  // nothing about its recency changed. Proven: three tied pages read A,B,C; forget+refetch B and
+  // they read A,C,B. `url` is the primary key — unique and STABLE across forget+refetch — so it is
+  // the tie-break every one of these fetched_at orderings needs, and rowid is exactly the one it
+  // cannot use.
   const pages = all(`SELECT url, final_url, title, description, status, html_bytes, md_bytes, fetched_at
-                     FROM pages ORDER BY fetched_at DESC LIMIT ?`, k)
+                     FROM pages ORDER BY fetched_at DESC, url ASC LIMIT ?`, k)
     .map((p) => ({ ...p, host: hostOf(p.final_url || p.url), tokens: Math.ceil((p.md_bytes || 0) / 4) }));
   // `count` is the TRUE size of the cache, not the capped page. Reporting pages.length AS the count was a
   // silent truncation — the library reads as complete when it is only the newest k. Say the total and the cut.
@@ -269,7 +278,7 @@ export function related(url, { k = 6 } = {}) {
   const cur = get('SELECT url, final_url FROM pages WHERE url=?', url);
   if (!cur) return { url, host: null, pages: [] };
   const host = hostOf(cur.final_url || cur.url);
-  const pages = all('SELECT url, final_url, title, fetched_at, md_bytes FROM pages ORDER BY fetched_at DESC')
+  const pages = all('SELECT url, final_url, title, fetched_at, md_bytes FROM pages ORDER BY fetched_at DESC, url ASC')
     .map((p) => ({ url: p.url, title: p.title, fetched_at: p.fetched_at,
       host: hostOf(p.final_url || p.url), tokens: Math.ceil((p.md_bytes || 0) / 4) }))
     .filter((p) => host && p.host === host && p.url !== url)
@@ -324,7 +333,7 @@ export function search(query, { k = 8, max_tokens = 1800 } = {}) {
                        ELSE instr(lower(pages_fts.markdown), lower(?)) > 0 END AS located,
                   bm25(pages_fts) AS score
                 FROM pages_fts JOIN pages p ON p.url = pages_fts.url
-                WHERE pages_fts MATCH ? ORDER BY score LIMIT ?`,
+                WHERE pages_fts MATCH ? ORDER BY score, p.url ASC LIMIT ?`,
       SNIPPET_MAX, probe, SNIPPET_MAX, probe, m, Math.max(k * 3, 20));
   } catch (e) { return { query, error: e.message, results: [] }; }
 
@@ -395,7 +404,7 @@ export function pageLinks(url, { limit = 60 } = {}) {
 export function list({ k = 25 } = {}) {
   k = posInt(k, 25, 1000);
   const total = get('SELECT COUNT(*) n FROM pages')?.n ?? 0;
-  const pages = all(`SELECT url, title, md_bytes, fetched_at FROM pages ORDER BY fetched_at DESC LIMIT ?`, k);
+  const pages = all(`SELECT url, title, md_bytes, fetched_at FROM pages ORDER BY fetched_at DESC, url ASC LIMIT ?`, k);
   // scout_list caps at k (default 25). Say how many pages there really are and whether the list was cut, so
   // an agent with 200 pages of reading history isn't shown 25 rows as if that were the whole of it.
   return { count: total, shown: pages.length, truncated: total > pages.length, pages };
