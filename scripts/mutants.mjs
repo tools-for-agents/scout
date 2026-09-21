@@ -116,6 +116,26 @@ const CANARIES = [
     into: '    : (raw && !isHtml ? r.text : htmlToMarkdown(r.text, r.finalUrl));',
   },
   {
+    why: 'scout_links must READ THE STATUS of what it fetched — silent, a branded 404 came back as `count: 5` of the error page\'s own "try these instead" navigation, presented as that page\'s outbound links, with no status field anywhere for a caller to check. fetch was honest about the byte-identical response the whole time, and links is the surface whose wrong answer becomes the agent\'s next crawl',
+    file: 'src/core.js',
+    find: '  if (r.status >= 400)\n    why.push(`scout got HTTP',
+    into: '  if (false)\n    why.push(`scout got HTTP',
+  },
+  {
+    why: 'a PDF has no anchors — without the binary check `scout_links` answers "0 links" for a file it never could have read, and 0 links from a live URL reads as "a leaf, nothing to follow here"',
+    file: 'src/core.js',
+    // Re-pointed when links() started destructuring { links, total }. Same line, same guard: make
+    // the binary check never fire and the PDF case must go red.
+    find: '  const binary = looksBinary(r.contentType, r.text);\n  const { links: found, total } = binary',
+    into: '  const binary = false;\n  const { links: found, total } = binary',
+  },
+  {
+    why: 'scout_links reports the page\'s TRUE link total and flags a list the limit CUT — reporting the returned length as the count is a silent truncation, so 100 links off a 500-link index come back byte-identical to a page that genuinely points at exactly 100 things, and an agent crawling from it stops 400 URLs short believing it has the lot (the same silent truncation scout_list is guarded against, on the surface whose answer becomes the next crawl)',
+    file: 'src/core.js',
+    find: '    html_bytes: r.text.length, count: total, shown: n, truncated: cut || capped, links: found };',
+    into: '    html_bytes: r.text.length, count: n, shown: n, truncated: capped, links: found };',
+  },
+  {
     why: 'a page CHANGED if it gained OR lost a line — `&&` reports "unchanged" for a pure addition or removal',
     file: 'src/core.js',
     find: '  return { changed: added > 0 || removed > 0, added, removed, was_lines: a.length, now_lines: b.length };',

@@ -12,7 +12,7 @@ const nowISO = () => new Date().toISOString();
 const localDay = (iso) => { const d = new Date(iso); return Number.isNaN(+d) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 // Coerce a count/limit that arrived NaN ('?k=abc'), a string, 0, negative or Infinity to a sane bound.
 // Raw, a bad value THROWS at the SQLite `LIMIT ?` bind ("datatype mismatch"), makes `LIMIT -1` return
-// the WHOLE table, or makes extractLinks' `out.length < NaN` return nothing — all silent-wrong answers.
+// the WHOLE table, or makes extractLinks' `links.length < NaN` return nothing — all silent-wrong answers.
 const posInt = (v, def, max) => (Number.isFinite(+v) && +v > 0 ? Math.min(Math.floor(+v), max) : def);
 // Strip the #fragment: it is CLIENT-SIDE ONLY — never sent to the server — so `page#a` and `page#b`
 // are the exact same fetched resource. Keeping it in the cache key defeated the cache (each section
@@ -198,6 +198,17 @@ function looksBinary(contentType, text) {
   return bad / sample.length > 0.1;
 }
 
+// The NAME behind a status code. "HTTP 403" is a number an agent has to look up; "403 Forbidden"
+// is a fact it can act on. Lives here, not inside one function, because BOTH network-facing
+// surfaces (fetchUrl and links) have to report the same failure — and the day they said it
+// differently, or one of them said nothing at all, is exactly the bug below.
+const httpReason = (status) => ({ 400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found',
+  408: 'Request Timeout', 410: 'Gone', 429: 'Too Many Requests', 500: 'Internal Server Error',
+  502: 'Bad Gateway', 503: 'Service Unavailable', 504: 'Gateway Timeout' }[status] || 'error');
+
+// The read cap, spelled for a human: 5000000 → "5MB", 40000 → "40KB".
+const capLabel = () => { const cap = maxBytes(); return cap >= 1e6 ? `${Math.round(cap / 1e5) / 10}MB` : `${Math.round(cap / 1000)}KB`; };
+
 export async function fetchUrl(url, { fresh = false, max_tokens = 6000, raw = false, timeout = 20000 } = {}) {
   url = normUrl(url);
   const cached = get('SELECT * FROM pages WHERE url=?', url);
@@ -217,9 +228,7 @@ export async function fetchUrl(url, { fresh = false, max_tokens = 6000, raw = fa
   // The cap is not the same as shape()'s token truncation: the rest of the page was NEVER FETCHED,
   // so raising max_tokens won't get it. Lead with the note so it survives the token-budget cut.
   if (r.capped && !binary) {
-    const cap = maxBytes();
-    const size = cap >= 1e6 ? `${Math.round(cap / 1e5) / 10}MB` : `${Math.round(cap / 1000)}KB`;
-    markdown = `> [scout read only the first ${size} of this oversized page — the rest was not fetched. `
+    markdown = `> [scout read only the first ${capLabel()} of this oversized page — the rest was not fetched. `
       + `What follows is the beginning; use scout_search to find within it.]\n\n${markdown}`;
   }
   // A 4xx/5xx still has a BODY — usually a friendly HTML error page ("Oops, not found — try
@@ -230,10 +239,7 @@ export async function fetchUrl(url, { fresh = false, max_tokens = 6000, raw = fa
   // and oversized notes). scout ANNOTATES rather than refuses — the body stays available for
   // anyone debugging the error itself.
   if (r.status >= 400) {
-    const reason = { 400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found',
-      408: 'Request Timeout', 410: 'Gone', 429: 'Too Many Requests', 500: 'Internal Server Error',
-      502: 'Bad Gateway', 503: 'Service Unavailable', 504: 'Gateway Timeout' }[r.status] || 'error';
-    markdown = `> [scout got HTTP ${r.status} ${reason} from ${url} — this is the server's ERROR page, `
+    markdown = `> [scout got HTTP ${r.status} ${httpReason(r.status)} from ${url} — this is the server's ERROR page, `
       + `NOT the content you asked for. Do not treat the text below as the page's real content.]\n\n${markdown}`;
   }
 
@@ -362,13 +368,104 @@ export function search(query, { k = 8, max_tokens = 1800 } = {}) {
   return { query, searched, count: results.length, tokens, results, matched, withheld, limited_by, budget: max_tokens, k };
 }
 
-// ── links: outbound links from a page (fetches + caches it if needed) ─────────
-export async function links(url, { limit = 100 } = {}) {
-  limit = posInt(limit, 100, 2000);
+// ── links: outbound links from a page (always a fresh fetch; no cache read or write) ─────────
+//
+// 🔑 THE SAME RESPONSE, TWO SURFACES, AND ONLY ONE OF THEM WAS HONEST. fetchUrl qualifies three
+// things about a response — a 4xx/5xx body, a binary resource, a read stopped at the cap — and
+// links() threw ALL THREE away on the byte-identical response. Point it at a branded 404 and it
+// returned the error page's own navigation and "try these instead" list as that page's outbound
+// links: `count: 5`, exit 0, and no `status` anywhere in the object, so neither the CLI nor an MCP
+// caller could even detect it. That is rule 5 — a wrong answer in the costume of a right one — and
+// it is worse here than in fetch, because scout_links exists "to decide where to navigate or crawl
+// next": the wrong answer does not sit in a buffer, it becomes the agent's next actions. A crawl
+// under a site-wide 403 or 429 can walk nothing but error-page chrome while every call reports
+// success. Worse, an agent that watched scout_fetch tell the truth about this exact URL has been
+// taught to stop checking.
+//
+// So whatever httpGet knows about the quality of a response, links() says out loud, with `error`
+// FIRST in the object so it leads (the same move as fetch's leading markdown note). The links are
+// still returned under it — scout ANNOTATES rather than refuses, so anyone debugging the error page
+// itself still has it.
+//
+// AND THE EMPTY CASE IS THE LOUD ONE. "0 links from <url>" on a dead URL is indistinguishable from
+// a real page that genuinely links nowhere, and reads as "this is a leaf, nothing to follow" — so
+// every answer, empty or not, carries the haystack it was read from: status, content_type, bytes.
+
+// The most links one call will return. Named, because the ADVICE in the notes below is only true
+// while there is headroom: "re-run with a higher limit" told a caller already sitting at the
+// ceiling to do something that cannot work, which is a confident wrong answer about scout itself.
+const MAX_LINKS = 2000;
+
+export async function links(url, { limit = 100, timeout = 20000 } = {}) {
+  limit = posInt(limit, 100, MAX_LINKS);
   url = normUrl(url);
-  const r = await httpGet(url, 20000);
-  const found = extractLinks(r.text, r.finalUrl, limit);
-  return { url, final_url: r.finalUrl, count: found.length, links: found };
+  const r = await httpGet(url, timeout);
+  // A PDF/image/archive has no anchors to find. Extracting zero of them and calling it an answer is
+  // the same silent lie in a quieter voice, so name the content type instead (fetch already does).
+  const binary = looksBinary(r.contentType, r.text);
+  const { links: found, total } = binary ? { links: [], total: 0 } : extractLinks(r.text, r.finalUrl, limit);
+  const n = found.length;
+  const many = `${n} link${n === 1 ? '' : 's'}`;
+  const why = [];
+  if (r.status >= 400)
+    why.push(`scout got HTTP ${r.status} ${httpReason(r.status)} from ${r.finalUrl} — this is the server's ERROR page, `
+      + `NOT the page you asked for, so `
+      + (n === 0
+        // The quiet poison: an empty list from a dead URL reads as "a leaf, nothing to follow here",
+        // and the agent stops — never learning the page was not there.
+        ? `the empty list below does NOT mean "this page points nowhere" — the page was not there at all`
+        : `the ${many} below are that error page's own navigation and "try these instead" list, not ${url}'s `
+          + `outbound links. Do not crawl them`)
+      + `. Check the URL, or read the error page itself with: scout fetch ${url}`);
+  if (binary)
+    // It says what scout DID, not what the document IS. The same check fires on a real PDF and on
+    // genuine HTML a server mislabelled `application/octet-stream` — and "this is not HTML" is a
+    // confident claim about the second that happens to be false. "scout read it as binary, because
+    // of X" is true in both, and names the thing the caller can actually check.
+    why.push(`scout read this as a binary resource (${r.contentType ? `the server sent it as ${r.contentType}` : 'the server declared no content-type'}), `
+      + `so links — which are extracted from HTML — were never looked for: the empty list below means "scout did not read `
+      + `this as HTML", NOT "this page points nowhere". If you expected HTML here, check what ${r.finalUrl} really serves; `
+      + `otherwise use a tool built for that content type.`);
+  // ── WHAT IS MISSING FROM THE LIST, IN THIS REPO'S OWN count/shown/truncated SHAPE ──
+  //
+  // A cut list is not an error — it is a REAL answer that is only part of one, and a partial list of
+  // places to crawl next passes for a complete one just as easily. There are TWO ways it gets cut,
+  // and the first one is the DEFAULT PATH: `limit` (100) cuts a 500-link docs index down to 100.
+  // Reporting that as `count: 100, truncated: false` was this fix's own bug — an answer
+  // byte-identical to a page that genuinely points at exactly 100 things, asserting completeness in
+  // exactly the case it claimed to close. So `count` is the page's TOTAL and `shown` is how many are
+  // in `links`, the same contract list() has answered with for the same reason ("count is the TRUE
+  // size of the cache, not the capped page"). `truncated` means what it means everywhere else here:
+  // THE THING YOU ARE HOLDING WAS CUT — by the limit, or by the fetch cap, or both, each said in
+  // words below, because a boolean cannot tell you which and a caller cannot act on "true".
+  const cut = n < total;                     // the limit cut the list
+  const capped = !!r.capped && !binary;      // the fetch cap cut the page the list was read from
+  const notes = [];
+  // NO SENTENCE HERE MAY BE FALSE ON ITS OWN. `total` is the links in the html scout READ, which is
+  // the whole page only when the read was not capped — so the cut note says "this page has N" only
+  // then, and otherwise speaks for the part it read. (Written flat, both ways, because the first
+  // draft of this said "this page has 45 outbound links" about a page it had read 6KB of, and let
+  // the second sentence take it back. A correction is not a repair: the first sentence is the one
+  // that gets quoted.)
+  const more = limit < MAX_LINKS
+    ? `Re-run with a higher limit, up to ${MAX_LINKS}, for the rest.`
+    : `${MAX_LINKS} is the most one call returns, so the other ${total - n} are not reachable this way.`;
+  if (cut && !capped)
+    notes.push(`PARTIAL LIST: this page has ${total} outbound links and scout returned the first ${n} of them `
+      + `(limit ${limit}) — so this is not everywhere it points. ${more}`);
+  if (cut && capped)
+    notes.push(`PARTIAL LIST: scout returned the first ${n} of the ${total} links it found (limit ${limit}). ${more}`);
+  if (capped)
+    notes.push(`PARTIAL READ: scout read only the first ${capLabel()} of this oversized page and the rest was never `
+      + `fetched, so ${total} is the number of links in the part it read, not in the whole page.`);
+  const note = notes.length ? notes.join(' ') : null;
+  const out = { url, final_url: r.finalUrl, status: r.status, content_type: r.contentType || '',
+    html_bytes: r.text.length, count: total, shown: n, truncated: cut || capped, links: found };
+  // An error page can ALSO be cut — and then the error's "the N links below are that error page's
+  // navigation" is true but partial. Both go back, error leading, rather than the louder one
+  // swallowing the quieter one.
+  if (why.length) return note ? { error: why.join(' '), note, ...out } : { error: why.join(' '), ...out };
+  return note ? { note, ...out } : out;
 }
 
 // Where a page you've already read points — answered from the CACHE, no network

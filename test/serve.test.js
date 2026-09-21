@@ -337,12 +337,261 @@ test('links: fetching a live page resolves relative hrefs, dedupes, and drops no
     assert.equal(urls.filter((u) => u === 'https://external.example.org/post').length, 1,
       'the duplicate is collapsed to one');
     assert.ok(!urls.some((u) => /^(mailto:|#)/.test(u)), 'mail and in-page anchors are not places to crawl');
-    assert.equal(r.count, r.links.length, 'count matches the list it returns');
+    assert.equal(r.count, 2, 'count is how many outbound links the PAGE has');
+    assert.equal(r.shown, r.links.length, 'shown is how many came back');
+    assert.equal(r.truncated, false, 'and nothing was cut, so it says nothing was cut');
     assert.equal(r.final_url, pageUrl, 'it reports where it actually landed');
 
     const one = await links(pageUrl, { limit: 1 });
     assert.equal(one.links.length, 1, 'the limit caps how many come back');
+    assert.equal(one.shown, 1);
+    assert.equal(one.count, 2, 'and the count still reports the page, not the cut list');
+    assert.equal(one.truncated, true, 'a cut list says it was cut — see the dedicated test below');
   } finally { origin.close(); }
+});
+
+// ── an error page's navigation is not the page's outbound links ──────────────────
+// The test above proved links() extracts correctly. It never asked WHAT IT READ: its lab server
+// answers writeHead(200) unconditionally, so nothing in the suite ever handed links() a non-200 —
+// and links() never read `r.status`. Point it at a branded 404 and it returned the error page's
+// "try one of these instead" list as the page's outbound links, count: 5, no status field anywhere
+// in the object, while fetchUrl on the byte-identical response loudly refused to let the same body
+// pass as content. scout_links exists to decide where to crawl next, so that wrong answer becomes
+// the agent's next actions. Every signal httpGet has about the response must survive into the
+// result — and an empty list must carry the haystack, or "0 links" cannot be told from "not there".
+test('links: an error page\'s navigation is not the page\'s outbound links', async (t) => {
+  const { links } = await import('../src/core.js');
+  const { createServer } = await import('node:http');
+
+  const errorPage = `<!doctype html><html><head><title>Page not found</title></head><body>
+    <nav><a href="/">Home</a> <a href="/about">About us</a></nav>
+    <main><h1>Sorry, we couldn't find that page</h1><p>Try one of these instead:</p><ul>
+    <li><a href="https://docs.example.com/v2/getting-started">Getting started (v2)</a></li>
+    <li><a href="https://status.example.com/">Status page</a></li></ul></main></body></html>`;
+  const srv = createServer((req, res) => {
+    if (req.url === '/gone') { res.writeHead(404, { 'content-type': 'text/html' }); return res.end(errorPage); }
+    if (req.url === '/paywall') { res.writeHead(403, { 'content-type': 'text/html' }); return res.end(errorPage); }
+    // the quiet poison: a dead URL whose body carries no anchors at all
+    if (req.url === '/bare') { res.writeHead(404, { 'content-type': 'text/html' });
+      return res.end('<!doctype html><html><body><h1>404</h1></body></html>'); }
+    if (req.url === '/manual.pdf') { res.writeHead(200, { 'content-type': 'application/pdf' });
+      return res.end(Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0, 1, 2, 3, 4, 5, 6, 7])); }
+    if (req.url === '/leaf') { res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end('<!doctype html><html><body><p>A real page that genuinely links nowhere.</p></body></html>'); }
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<!doctype html><html><body><a href="https://real.example.org/post">a real outbound link</a></body></html>');
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.address().port}`;
+
+  const gone = await links(`${base}/gone`);
+  assert.equal(gone.status, 404, 'the status survives into the result at all — it used to be dropped');
+  assert.ok(gone.error, 'a 404 is not a successful link extraction');
+  assert.equal(Object.keys(gone)[0], 'error', 'and it LEADS the object — not a sibling field nobody reads');
+  assert.match(gone.error, /HTTP 404 Not Found/, 'it names what went wrong, by name and not just by number');
+  assert.match(gone.error, new RegExp(`${base}/gone`), 'and where it looked');
+  assert.match(gone.error, /scout fetch /, 'and the command that shows you the error itself');
+  assert.match(gone.error, /error page|not the page you asked for/i, 'and says plainly whose links these are');
+  assert.ok(gone.count > 0 && gone.links.length === gone.count,
+    'the links are still RETURNED under it — scout annotates, it does not refuse');
+
+  const paywall = await links(`${base}/paywall`);
+  assert.match(paywall.error || '', /HTTP 403 Forbidden/, 'a 403 is flagged the same way — this is about the status, not the word "404"');
+
+  // The degenerate case: "0 links" from a dead URL reads as "a leaf, nothing to follow here".
+  const bare = await links(`${base}/bare`);
+  assert.equal(bare.count, 0);
+  assert.ok(bare.error, 'an EMPTY result from an error page is the loudest case, not the quietest');
+  assert.match(bare.error, /not there|points nowhere/i, 'it says the empty list is not "this page has no links"');
+
+  // Not HTML at all: zero anchors is arithmetic, not an answer.
+  const pdf = await links(`${base}/manual.pdf`);
+  assert.equal(pdf.count, 0);
+  assert.match(pdf.error || '', /binary/i, 'a PDF says what it is instead of reporting an empty link list');
+
+  // ── over-fire guards: the correct-looking neighbours must stay correct ──
+  const ok = await links(`${base}/real`);
+  assert.equal(ok.status, 200);
+  assert.equal(ok.error, undefined, 'a healthy 200 gets no error');
+  assert.equal(ok.note, undefined, 'and no note');
+  assert.equal(ok.count, 1, 'and still extracts its links exactly as before');
+  assert.equal(ok.links[0].url, 'https://real.example.org/post');
+
+  // A real page that links nowhere is a real answer — but it still carries the haystack it was
+  // read from, so a caller can tell this apart from /bare above without guessing.
+  const leaf = await links(`${base}/leaf`);
+  assert.equal(leaf.count, 0);
+  assert.equal(leaf.error, undefined, '0 links from a live 200 page is an honest answer, not an error');
+  assert.equal(leaf.status, 200, 'and the empty answer says what it read: the status,');
+  assert.match(leaf.content_type, /text\/html/, 'the content type,');
+  assert.ok(leaf.html_bytes > 0, 'and the size of the haystack');
+});
+
+// The third signal links() dropped: a read that stopped at the cap. A PARTIAL list of places to
+// crawl next passes for a complete one exactly as easily as an error page's does.
+test('links: a page read only up to the cap says its link list is partial', async () => {
+  const { links } = await import('../src/core.js');
+  const { createServer } = await import('node:http');
+  const prev = process.env.SCOUT_MAX_BYTES;
+  process.env.SCOUT_MAX_BYTES = '4000';
+  let big = '<!doctype html><html><body>';
+  for (let i = 0; i < 400; i++) big += `<a href="https://example.org/p${i}">post ${i}</a>\n`;
+  big += '</body></html>';
+  const small = '<!doctype html><html><body><a href="https://example.org/p0">post 0</a></body></html>';
+  const srv = createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end(req.url.includes('big') ? big : small);
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    const cut = await links(`${base}/big`);
+    assert.equal(cut.truncated, true, 'the read stopped at the cap and the result says so');
+    assert.match(cut.note || '', /PARTIAL|4KB/, 'in words, up front — not only as a boolean');
+    assert.equal(Object.keys(cut)[0], 'note', 'leading the object, like the error does');
+    assert.ok(cut.count > 0 && cut.count < 400, `only the links inside the cap were seen (got ${cut.count})`);
+    assert.equal(cut.error, undefined, 'a capped read is not an error — it is a real answer that is only part of one');
+
+    const whole = await links(`${base}/small`);
+    assert.equal(whole.truncated, false, 'a page under the cap is read whole');
+    assert.equal(whole.note, undefined, 'and claims nothing about being partial');
+  } finally {
+    srv.close();
+    if (prev === undefined) delete process.env.SCOUT_MAX_BYTES; else process.env.SCOUT_MAX_BYTES = prev;
+  }
+});
+
+// ── a list the LIMIT cut must not pass for the whole of where a page points ──────
+// The two tests above taught links() to report the RESPONSE it read. This one is about the ANSWER,
+// and it is the mistake the previous fix made while closing the one above: it added a `truncated`
+// field that meant "the html read hit the byte cap" — a 5MB edge case — while `limit` (100, the
+// DEFAULT) quietly cut a 500-link docs index down to 100 and reported `truncated: false`. That
+// answer was byte-identical to a page that genuinely points at exactly 100 things, so an agent
+// crawling from it stops 400 URLs short believing it has the lot. Everywhere else in this repo
+// `count` is the TRUE total, `shown` is how many came back, and `truncated` means THE THING YOU ARE
+// HOLDING WAS CUT (list() is guarded by its own canary for exactly this). Same contract here.
+test('links: a list cut by the limit says so — and cannot be confused with a complete one', async (t) => {
+  const { links } = await import('../src/core.js');
+  const { createServer } = await import('node:http');
+
+  const page = (n) => {
+    let h = '<!doctype html><html><body>';
+    for (let i = 0; i < n; i++) h += `<a href="https://example.org/post-${i}">post ${i}</a>\n`;
+    return `${h}</body></html>`;
+  };
+  const sizes = { '/exactly100': 100, '/thousands': 2500 };
+  const srv = createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end(page(sizes[req.url] ?? 500));
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.address().port}`;
+
+  const many = await links(`${base}/fivehundred`);              // the default limit: 100
+  assert.equal(many.count, 500, 'count is how many links the PAGE has, not how many came back');
+  assert.equal(many.shown, 100, 'shown is how many came back');
+  assert.equal(many.links.length, 100);
+  assert.equal(many.truncated, true, 'the list was cut — by the DEFAULT limit, on the common path');
+  assert.match(many.note || '', /PARTIAL LIST/, 'and says so in words, not only as a boolean');
+  assert.match(many.note || '', /500/, 'including how much is missing');
+  assert.match(many.note || '', /limit/i, 'and what to do about it');
+  assert.equal(Object.keys(many)[0], 'note', 'leading the object, where it will be read');
+
+  // The over-fire guard — and the whole point. These two answers must not BE the same answer.
+  const exact = await links(`${base}/exactly100`);
+  assert.equal(exact.count, 100);
+  assert.equal(exact.shown, 100);
+  assert.equal(exact.truncated, false, 'a page that genuinely points at exactly 100 things was NOT cut');
+  assert.equal(exact.note, undefined, 'and claims nothing about being partial');
+  const fingerprint = (r) => JSON.stringify({ count: r.count, shown: r.shown, truncated: r.truncated,
+    note: r.note ?? null, returned: r.links.length });
+  assert.notEqual(fingerprint(many), fingerprint(exact),
+    'the cut list and the complete one came back as the same object — that is the whole bug');
+
+  // And the note's advice has to be TRUE: raising the limit must actually close it.
+  const all = await links(`${base}/fivehundred`, { limit: 2000 });
+  assert.equal(all.shown, 500);
+  assert.equal(all.count, 500);
+  assert.equal(all.truncated, false, 'nothing left to cut');
+  assert.equal(all.note, undefined);
+
+  // …including at the CEILING. One call returns at most 2000 links, so telling a caller who is
+  // already there to "re-run with a higher limit" is an instruction that cannot work — a confident
+  // wrong answer about scout itself, in the sentence written to prevent confident wrong answers.
+  const ceiling = await links(`${base}/thousands`, { limit: 5000 });   // coerced down to 2000
+  assert.equal(ceiling.count, 2500);
+  assert.equal(ceiling.shown, 2000, 'the hard ceiling on one call');
+  assert.equal(ceiling.truncated, true);
+  assert.doesNotMatch(ceiling.note, /higher limit/,
+    'it must not send a caller who is already at the maximum back for more');
+  assert.match(ceiling.note, /most one call returns/, 'it says where the real ceiling is');
+  assert.match(ceiling.note, /other 500 are not reachable/, 'and exactly how many are out of reach');
+});
+
+// ── the exit code must not eat the list it just printed ─────────────────────────
+// `scout links` exits 1 on an error page. It did that with process.exit(1) — immediately after the
+// loop that console.logs the links — and console.log to a PIPE is ASYNCHRONOUS: process.exit()
+// abandons whatever is still queued. Against a 404 with 2000 links, piped to a consumer that was
+// not instantly draining (a grep, a pager, another agent), 525 of 2004 lines arrived and the last
+// one was an ordinary link entry: no marker, no message. A change whose thesis is "never a silent
+// truncation" had added one to its own output, on the exact path it was written for. This also
+// covers the CLI's header, which had no test at all.
+test('links: exiting 1 on an error page must not discard the output already queued to a pipe', async (t) => {
+  const { spawn } = await import('node:child_process');
+  const { createServer } = await import('node:http');
+
+  const N = 2000;
+  let html = '<!doctype html><html><body>';
+  for (let i = 0; i < N; i++)
+    html += `<a href="https://example.org/suggestion-${String(i).padStart(4, '0')}">suggestion number ${i}`
+      + ' — anchor text long enough that the printed lines fill a 64KB pipe buffer</a>\n';
+  html += '</body></html>';
+  const srv = createServer((req, res) => {
+    res.writeHead(req.url === '/gone' ? 404 : 200, { 'content-type': 'text/html' });
+    res.end(html);
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const cli = join(import.meta.dirname, '..', 'src', 'cli.js');
+
+  // `slow` is a consumer that does not read for half a second: the child fills the 64KB pipe buffer
+  // and blocks, so at exit its own output is still in flight — which is when process.exit() throws
+  // it away. (Only meaningful for an output bigger than the buffer; a small one is delivered whole
+  // either way, so the header run below reads immediately.)
+  const run = (path, limit, slow) => new Promise((resolve, reject) => {
+    const p = spawn(process.execPath, [cli, 'links', `${base}${path}`, '--limit', String(limit)],
+      { env: { ...process.env, SCOUT_DB: join(work, 'cache.db') }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '', err = '';
+    p.stderr.setEncoding('utf8');
+    p.stderr.on('data', (d) => { err += d; });
+    const read = () => {
+      p.stdout.setEncoding('utf8');
+      p.stdout.on('data', (d) => { out += d; });
+    };
+    if (slow) setTimeout(read, 500); else read();
+    p.on('error', reject);
+    p.on('close', (code) => resolve({ code, out, err }));
+  });
+
+  const gone = await run('/gone', N, true);
+  const lines = gone.out.split('\n');
+  const linkLines = lines.filter((l) => /^ {2}https:\/\/example\.org\/suggestion-/.test(l));
+  assert.equal(linkLines.length, N,
+    `all ${N} link lines survived the exit — got ${linkLines.length}, so the exit ate the answer`);
+  assert.match(linkLines.at(-1), /suggestion-1999/, 'right down to the last one, not cut mid-list');
+  assert.equal(gone.code, 1, 'and it still exits 1 — the answer is still wrong, the output is just intact');
+  assert.match(lines[0], /^⚠ .*HTTP 404/, 'the warning still leads, on stdout, attached to the list');
+  assert.equal(gone.err, '', 'and nothing crashed on the way out');
+
+  // The header, on the path where the limit cuts the list: it must not COUNT what it is not showing.
+  const cut = await run('/ok', 100, false);
+  assert.equal(cut.code, 0, 'a healthy 200 is still a success');
+  assert.match(cut.out, /^⚠ PARTIAL LIST/m, 'the cut is announced');
+  assert.match(cut.out, new RegExp(`^100 of ${N} links from `, 'm'),
+    '…and the header says both numbers — a bare "100 links from <url>" reads as the whole of where the page points');
 });
 
 test('re-read: the question is not "here it is again" but "did it change"', async () => {

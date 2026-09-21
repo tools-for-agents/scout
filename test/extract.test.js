@@ -55,13 +55,22 @@ test('htmlToMarkdown keeps content images (relative → absolute) and drops trac
   assert.doesNotMatch(md, /pixel\.gif/, 'the 1×1 tracking pixel is dropped');
 });
 
-test('extractLinks returns absolute, de-duplicated http links with text', () => {
-  const links = extractLinks(PAGE, 'https://site.com/post');
+test('extractLinks returns absolute, de-duplicated http links with text — and counts past its limit', () => {
+  const { links, total } = extractLinks(PAGE, 'https://site.com/post');
   const urls = links.map((l) => l.url);
   assert.ok(urls.includes('https://site.com/home'));
   assert.ok(urls.includes('https://ext.com/a'));
   assert.equal(new Set(urls).size, urls.length); // no dupes
   assert.ok(links.find((l) => l.url === 'https://ext.com/a').text === 'external');
+  assert.equal(total, links.length, 'nothing was cut here, so the total IS the list');
+
+  // 🔑 The limit caps what is COLLECTED, not what is COUNTED. Stopping the scan at the limit left
+  // the caller unable to tell a cut list from a complete one — the scanner is the only place that
+  // knows, so it is the only place that can say. (links() turns this into count/shown/truncated.)
+  const one = extractLinks(PAGE, 'https://site.com/post', 1);
+  assert.equal(one.links.length, 1, 'the limit caps what comes back');
+  assert.equal(one.total, links.length,
+    'but the scan ran to the end and counted the rest — without that, a caller holding 1 of 4 links has no way to know');
 });
 
 test('decodeEntities decodes named and numeric entities', () => {

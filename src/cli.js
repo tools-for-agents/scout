@@ -39,16 +39,43 @@ try {
       console.error(`scout could not search your reading — ${r.error}\n`
         + `  This is NOT "you have not read that". The cache is unreadable, so NOTHING was searched.\n`
         + `  Move or delete it and re-fetch the pages you need — the cache is a cache, not a source.`);
-      process.exit(1);
+      // exitCode, not exit(): stderr is queued too when it is a pipe, and the message explaining
+      // WHY nothing was searched is the whole value of this branch. Same rule as `links` below.
+      process.exitCode = 1;
+    } else {
+      for (const x of r.results) out(`\n▸ ${x.title}  score=${x.score}\n  ${x.url}\n  ${x.excerpt}`);
+      const hay = r.searched ? ` of ${r.searched.pages} page${r.searched.pages === 1 ? '' : 's'} read` : '';
+      out(`\n— ${r.count} hits${hay}, ~${r.tokens} tokens —`);
+      if (r.searched && r.searched.pages === 0) out(`  you have not read anything yet: ${r.searched.cache}`);
     }
-    for (const x of r.results) out(`\n▸ ${x.title}  score=${x.score}\n  ${x.url}\n  ${x.excerpt}`);
-    const hay = r.searched ? ` of ${r.searched.pages} page${r.searched.pages === 1 ? '' : 's'} read` : '';
-    out(`\n— ${r.count} hits${hay}, ~${r.tokens} tokens —`);
-    if (r.searched && r.searched.pages === 0) out(`  you have not read anything yet: ${r.searched.cache}`);
   } else if (cmd === 'links') {
     const r = await scout.links(arg(), { limit: +flag('--limit', 100) });
-    out(`${r.count} links from ${r.final_url}\n`);
+    // 🔑 LEAD WITH THE TRUTH, ON STDOUT, ATTACHED TO THE ANSWER. links() now says when the page it
+    // read was an error page, a binary resource or a capped read — and a warning printed to stderr
+    // would be separated from the list the moment anyone pipes this, which is exactly when an agent
+    // is reading it. Above the list, in the same stream, or it is not a warning.
+    if (r.error) out(`⚠ ${r.error}\n`);
+    if (r.note) out(`⚠ ${r.note}\n`);           // and a cut list is still cut on an error page
+    // An empty list must carry its haystack: "0 links" alone cannot be told from a dead URL. And the
+    // header must never COUNT what it is not showing: `r.count` is the page's total, `r.shown` is how
+    // many are printed below, so when the limit cut the list the header says both — "100 of 500 links"
+    // — instead of a bare "100 links" that reads as the whole of where this page points.
+    const head = r.shown < r.count
+      ? `${r.shown} of ${r.count} links from ${r.final_url}`
+      : `${r.count} link${r.count === 1 ? '' : 's'} from ${r.final_url}`;
+    out(`${head}  · HTTP ${r.status} · ${r.html_bytes}B of ${r.content_type || 'unknown type'}\n`);
     for (const l of r.links) out(`  ${l.url}${l.text ? `  — ${l.text}` : ''}`);
+    // A page that was not there is not a successful answer to "where does this page point". fetch
+    // exits 0 on a 404 because its job — hand back this body, labelled — was still done; links'
+    // job was not. Say so in the one channel a shell script actually reads.
+    //
+    // 🔑 BUT exitCode, NEVER process.exit(1). console.log to a PIPE is ASYNCHRONOUS — the writes sit
+    // in a queue — and process.exit() abandons whatever is still in it. `scout links <404> --limit
+    // 2000 | anything-not-instantly-draining` printed 525 of its 2004 lines and ended on an ordinary
+    // link line: no marker, no message, exit 1. A change whose whole thesis is "never a silent
+    // truncation" had added one, to its own output, on the path it was written for. Setting exitCode
+    // lets Node drain stdout and exit with 1 on its own.
+    if (r.error) process.exitCode = 1;
   } else if (cmd === 'list') {
     out(scout.list({ k: +flag('-k', 25) }));
   } else if (cmd === 'forget') {
@@ -66,7 +93,8 @@ try {
 
   scout fetch <url> [--fresh] [--tokens N] [--raw]   fetch & extract readable markdown (cached)
   scout search "<query>" [-k N] [--tokens N]         search everything you've read
-  scout links <url> [--limit N]                      outbound links from a page
+  scout links <url> [--limit N]                      outbound links from a page (N of M when cut;
+                                                     exits 1 if the page was an error page)
   scout list [-k N]                                  recently fetched pages
   scout forget <url> | scout stats
   scout serve [--port 7950]                          browsable reading-room web view
@@ -75,5 +103,7 @@ try {
   }
 } catch (e) {
   console.error('error:', e.message);
-  process.exit(1);
+  // The last line of the program is the worst place to abandon a queued write: this is the only
+  // thing the caller will see, and `scout … 2>&1 | head` is how they will see it.
+  process.exitCode = 1;
 }

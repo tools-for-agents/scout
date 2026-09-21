@@ -32,7 +32,14 @@ const tools = [
   },
   {
     name: 'scout_links',
-    description: 'Extract the outbound links (absolute URLs + anchor text) from a page — use it to decide where to navigate or crawl next.',
+    description: 'Extract the outbound links (absolute URLs + anchor text) from a page — use it to decide where to navigate or crawl next. '
+      + 'Every result carries the response it was read from (status, content_type, html_bytes). If the URL answered with an HTTP error, '
+      + 'or was not HTML, the result LEADS with an `error` field: the links are then the error page\'s own navigation, not that page\'s '
+      + 'outbound links — do not crawl them, and do not read a count of 0 as "this page points nowhere". '
+      + 'It also says how much of the page you are holding: `count` is how many outbound links the page has, `shown` is how many came '
+      + 'back, and `truncated: true` means the list was CUT — by `limit` (default 100) or because only the start of an oversized page '
+      + 'was fetched — with a `note` saying which. A truncated list is not everywhere the page points; raise `limit` (max 2000) before '
+      + 'concluding you have seen them all.',
     inputSchema: { type: 'object', properties: {
       url: { type: 'string' }, limit: { type: 'integer', description: 'Max links (default 100)' },
     }, required: ['url'] },
