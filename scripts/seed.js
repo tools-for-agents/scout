@@ -32,7 +32,7 @@ work from a shared board, and record durable decisions in a shared memory.
 
 ## The core loop
 
-Every agent runs the same loop, backed by six zero-dependency tools:
+Every agent runs the same loop, backed by zero-dependency tools:
 
 1. **coordinate** — claim a task, message teammates, log spend.
 2. **read code** — pull *just enough* context instead of whole files.
